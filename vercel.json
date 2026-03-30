@@ -1,10 +1,10 @@
-// vercel.json - 프로젝트 루트에 생성
+# vercel.json - 프로젝트 루트에 생성
 
 {
   "crons": [
     {
       "path": "/api/cron/daily-briefing",
-      "schedule": "0 0 * * *" // 한국시간 오전 09시 기준
+      "schedule": "0 0 * * *"
     }
   ]
 }
