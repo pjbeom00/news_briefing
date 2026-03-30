@@ -1,0 +1,62 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model News {
+  id            Int            @id @default(autoincrement())
+  title         String
+  link          String         @unique
+  snippet       String?
+  pubDate       String?
+  sourceQuery   String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  briefingItems BriefingItem[]
+}
+
+model Briefing {
+  id          Int            @id @default(autoincrement())
+  query       String
+  summary     String
+  categoryTag String?
+  sentTo      String?
+  sentAt      DateTime?
+  createdAt   DateTime       @default(now())
+
+  items       BriefingItem[]
+}
+
+model BriefingItem {
+  id         Int       @id @default(autoincrement())
+  briefingId Int
+  newsId     Int
+  rankOrder  Int
+  createdAt  DateTime  @default(now())
+
+  briefing   Briefing  @relation(fields: [briefingId], references: [id], onDelete: Cascade)
+  news       News      @relation(fields: [newsId], references: [id], onDelete: Cascade)
+
+  @@unique([briefingId, newsId])
+  @@index([briefingId])
+  @@index([newsId])
+}
+
+model SavedQuery {
+  id         Int      @id @default(autoincrement())
+  name       String
+  query      String
+  category   String?
+  isFavorite Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
