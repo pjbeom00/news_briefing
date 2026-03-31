@@ -8,6 +8,20 @@ type RecommendationItem = {
   reason: string;
 };
 
+type SavedQueryRow = {
+  query: string;
+  category: string | null;
+};
+
+type BriefingRow = {
+  query: string;
+  categoryTag: string | null;
+};
+
+type NewsRow = {
+  title: string;
+};
+
 const apiKey = process.env.GEMINI_API_KEY;
 
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
@@ -80,8 +94,8 @@ function extractTopTerms(values: string[], limit = 10) {
 }
 
 function buildRuleBasedRecommendations(input: {
-  savedQueries: { query: string; category: string | null }[];
-  briefings: { query: string; categoryTag: string | null }[];
+  savedQueries: SavedQueryRow[];
+  briefings: BriefingRow[];
   newsTitles: string[];
 }) {
   const queryTerms = extractTopTerms(input.savedQueries.map((x) => x.query), 6);
@@ -140,7 +154,7 @@ export async function GET() {
     const fallback = buildRuleBasedRecommendations({
       savedQueries,
       briefings,
-      newsTitles: news.map((x) => x.title),
+      newsTitles: news.map((x: NewsRow) => x.title),
     });
 
     if (!ai) {
@@ -162,13 +176,13 @@ export async function GET() {
 5. JSON만 반환한다.
 
 [최근 저장 키워드]
-${savedQueries.map((x) => `- ${x.query} (${x.category || "미분류"})`).join("\n")}
+${savedQueries.map((x: SavedQueryRow) => `- ${x.query} (${x.category || "미분류"})`).join("\n")}
 
 [최근 브리핑]
-${briefings.map((x) => `- ${x.query} (${x.categoryTag || "미분류"})`).join("\n")}
+${briefings.map((x: BriefingRow) => `- ${x.query} (${x.categoryTag || "미분류"})`).join("\n")}
 
 [최근 기사 제목]
-${news.map((x) => `- ${x.title}`).join("\n")}
+${news.map((x: NewsRow) => `- ${x.title}`).join("\n")}
 `;
 
     const response = await ai.models.generateContent({
