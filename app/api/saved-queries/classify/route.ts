@@ -90,6 +90,12 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
   ],
 };
 
+type SavedQueryRow = {
+  id: number;
+  query: string;
+  category: string | null;
+};
+
 function normalizeQuery(value: string) {
   return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
@@ -123,11 +129,7 @@ export async function POST() {
   try {
     const targets = await prisma.savedQuery.findMany({
       where: {
-        OR: [
-          { category: null },
-          { category: "" },
-          { category: "미분류" },
-        ],
+        OR: [{ category: null }, { category: "" }, { category: "미분류" }],
       },
       orderBy: {
         id: "desc",
@@ -135,7 +137,7 @@ export async function POST() {
     });
 
     const results = await Promise.all(
-      targets.map((item) =>
+      targets.map((item: SavedQueryRow) =>
         prisma.savedQuery.update({
           where: { id: item.id },
           data: {
