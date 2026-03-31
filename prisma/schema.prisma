@@ -4,7 +4,8 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../generated/prisma"
 }
 
 datasource db {
@@ -20,7 +21,6 @@ model News {
   sourceQuery   String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
-
   briefingItems BriefingItem[]
 }
 
@@ -32,19 +32,18 @@ model Briefing {
   sentTo      String?
   sentAt      DateTime?
   createdAt   DateTime       @default(now())
-
   items       BriefingItem[]
 }
 
 model BriefingItem {
-  id         Int       @id @default(autoincrement())
+  id         Int      @id @default(autoincrement())
   briefingId Int
   newsId     Int
   rankOrder  Int
-  createdAt  DateTime  @default(now())
+  createdAt  DateTime @default(now())
 
-  briefing   Briefing  @relation(fields: [briefingId], references: [id], onDelete: Cascade)
-  news       News      @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  briefing Briefing @relation(fields: [briefingId], references: [id], onDelete: Cascade)
+  news     News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
 
   @@unique([briefingId, newsId])
   @@index([briefingId])
