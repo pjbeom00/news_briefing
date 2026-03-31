@@ -1,4 +1,4 @@
-# vercel.json - 프로젝트 루트에 생성
+// vercel.json - 프로젝트 루트에 생성
 
 {
   "crons": [
