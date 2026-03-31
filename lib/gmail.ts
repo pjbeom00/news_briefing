@@ -1,4 +1,6 @@
 // lib/gmail.ts - 제목 인코딩 포함
+// (2026-03-31) 파일 우선이 아니라 환경변수 우선, 없으면 파일 fallback, Gmail HTML 메일 발송 유틸
+
 import fs from "node:fs/promises";
 import path from "node:path";
 import { google } from "googleapis";
@@ -14,16 +16,77 @@ type InstalledCredentials = {
   };
 };
 
-async function getGmailClient() {
-  const credentialsRaw = await fs.readFile(CREDENTIALS_PATH, "utf-8");
-  const tokenRaw = await fs.readFile(TOKEN_PATH, "utf-8");
+type OAuthToken = {
+  access_token?: string;
+  refresh_token?: string;
+  scope?: string;
+  token_type?: string;
+  expiry_date?: number;
+};
 
-  const credentials = JSON.parse(credentialsRaw) as InstalledCredentials;
-  const token = JSON.parse(tokenRaw);
+let cachedGmail: ReturnType<typeof google.gmail> | null = null;
+
+async function readJsonFromEnvOrFile(
+  envKey: string,
+  filePath: string
+): Promise<string> {
+  const envValue = process.env[envKey];
+
+  if (envValue && envValue.trim()) {
+    return envValue;
+  }
+
+  return await fs.readFile(filePath, "utf-8");
+}
+
+async function getGmailClient() {
+  if (cachedGmail) {
+    return cachedGmail;
+  }
+
+  const credentialsRaw = await readJsonFromEnvOrFile(
+    "GOOGLE_OAUTH_CREDENTIALS_JSON",
+    CREDENTIALS_PATH
+  );
+
+  const tokenRaw = await readJsonFromEnvOrFile(
+    "GOOGLE_OAUTH_TOKEN_JSON",
+    TOKEN_PATH
+  );
+
+  let credentials: InstalledCredentials;
+  let token: OAuthToken;
+
+  try {
+    credentials = JSON.parse(credentialsRaw) as InstalledCredentials;
+  } catch {
+    console.error("credentialsRaw:", credentialsRaw);
+    throw new Error("GOOGLE_OAUTH_CREDENTIALS_JSON 또는 credentials.json 파싱 실패");
+  }
+
+  try {
+    token = JSON.parse(tokenRaw) as OAuthToken;
+  } catch {
+    console.error("tokenRaw:", tokenRaw);
+    throw new Error("GOOGLE_OAUTH_TOKEN_JSON 또는 token.json 파싱 실패");
+  }
 
   const installed = credentials.installed;
+
   if (!installed) {
-    throw new Error("credentials.json 형식이 올바르지 않습니다.");
+    throw new Error("OAuth credentials 형식이 올바르지 않습니다. installed 필드가 필요합니다.");
+  }
+
+  if (!installed.client_id) {
+    throw new Error("OAuth credentials에 client_id가 없습니다.");
+  }
+
+  if (!installed.client_secret) {
+    throw new Error("OAuth credentials에 client_secret이 없습니다.");
+  }
+
+  if (!installed.redirect_uris || installed.redirect_uris.length === 0) {
+    throw new Error("OAuth credentials에 redirect_uris가 없습니다.");
   }
 
   const oAuth2Client = new google.auth.OAuth2(
@@ -34,7 +97,12 @@ async function getGmailClient() {
 
   oAuth2Client.setCredentials(token);
 
-  return google.gmail({ version: "v1", auth: oAuth2Client });
+  cachedGmail = google.gmail({
+    version: "v1",
+    auth: oAuth2Client,
+  });
+
+  return cachedGmail;
 }
 
 function encodeMessage(message: string) {
@@ -70,12 +138,23 @@ export async function sendMail(params: {
 
   const encodedMessage = encodeMessage(rawMessage);
 
-  const response = await gmail.users.messages.send({
-    userId: "me",
-    requestBody: {
-      raw: encodedMessage,
-    },
-  });
+  try {
+    const response = await gmail.users.messages.send({
+      userId: "me",
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
 
-  return response.data;
+    return response.data;
+  } catch (error: any) {
+    console.error("GMAIL SEND ERROR:", {
+      message: error?.message,
+      code: error?.code,
+      errors: error?.errors,
+      response: error?.response?.data,
+    });
+
+    throw error;
+  }
 }
