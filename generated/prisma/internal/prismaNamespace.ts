@@ -747,6 +747,7 @@ export const NewsScalarFieldEnum = {
   title: 'title',
   link: 'link',
   snippet: 'snippet',
+  summary: 'summary',
   pubDate: 'pubDate',
   sourceQuery: 'sourceQuery',
   createdAt: 'createdAt',
@@ -763,6 +764,9 @@ export const BriefingScalarFieldEnum = {
   categoryTag: 'categoryTag',
   sentTo: 'sentTo',
   sentAt: 'sentAt',
+  scheduledDate: 'scheduledDate',
+  status: 'status',
+  errorMessage: 'errorMessage',
   createdAt: 'createdAt'
 } as const
 

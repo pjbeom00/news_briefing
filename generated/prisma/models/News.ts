@@ -39,6 +39,7 @@ export type NewsMinAggregateOutputType = {
   title: string | null
   link: string | null
   snippet: string | null
+  summary: string | null
   pubDate: string | null
   sourceQuery: string | null
   createdAt: Date | null
@@ -50,6 +51,7 @@ export type NewsMaxAggregateOutputType = {
   title: string | null
   link: string | null
   snippet: string | null
+  summary: string | null
   pubDate: string | null
   sourceQuery: string | null
   createdAt: Date | null
@@ -61,6 +63,7 @@ export type NewsCountAggregateOutputType = {
   title: number
   link: number
   snippet: number
+  summary: number
   pubDate: number
   sourceQuery: number
   createdAt: number
@@ -82,6 +85,7 @@ export type NewsMinAggregateInputType = {
   title?: true
   link?: true
   snippet?: true
+  summary?: true
   pubDate?: true
   sourceQuery?: true
   createdAt?: true
@@ -93,6 +97,7 @@ export type NewsMaxAggregateInputType = {
   title?: true
   link?: true
   snippet?: true
+  summary?: true
   pubDate?: true
   sourceQuery?: true
   createdAt?: true
@@ -104,6 +109,7 @@ export type NewsCountAggregateInputType = {
   title?: true
   link?: true
   snippet?: true
+  summary?: true
   pubDate?: true
   sourceQuery?: true
   createdAt?: true
@@ -202,6 +208,7 @@ export type NewsGroupByOutputType = {
   title: string
   link: string
   snippet: string | null
+  summary: string | null
   pubDate: string | null
   sourceQuery: string | null
   createdAt: Date
@@ -236,6 +243,7 @@ export type NewsWhereInput = {
   title?: Prisma.StringFilter<"News"> | string
   link?: Prisma.StringFilter<"News"> | string
   snippet?: Prisma.StringNullableFilter<"News"> | string | null
+  summary?: Prisma.StringNullableFilter<"News"> | string | null
   pubDate?: Prisma.StringNullableFilter<"News"> | string | null
   sourceQuery?: Prisma.StringNullableFilter<"News"> | string | null
   createdAt?: Prisma.DateTimeFilter<"News"> | Date | string
@@ -248,6 +256,7 @@ export type NewsOrderByWithRelationInput = {
   title?: Prisma.SortOrder
   link?: Prisma.SortOrder
   snippet?: Prisma.SortOrderInput | Prisma.SortOrder
+  summary?: Prisma.SortOrderInput | Prisma.SortOrder
   pubDate?: Prisma.SortOrderInput | Prisma.SortOrder
   sourceQuery?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -263,6 +272,7 @@ export type NewsWhereUniqueInput = Prisma.AtLeast<{
   NOT?: Prisma.NewsWhereInput | Prisma.NewsWhereInput[]
   title?: Prisma.StringFilter<"News"> | string
   snippet?: Prisma.StringNullableFilter<"News"> | string | null
+  summary?: Prisma.StringNullableFilter<"News"> | string | null
   pubDate?: Prisma.StringNullableFilter<"News"> | string | null
   sourceQuery?: Prisma.StringNullableFilter<"News"> | string | null
   createdAt?: Prisma.DateTimeFilter<"News"> | Date | string
@@ -275,6 +285,7 @@ export type NewsOrderByWithAggregationInput = {
   title?: Prisma.SortOrder
   link?: Prisma.SortOrder
   snippet?: Prisma.SortOrderInput | Prisma.SortOrder
+  summary?: Prisma.SortOrderInput | Prisma.SortOrder
   pubDate?: Prisma.SortOrderInput | Prisma.SortOrder
   sourceQuery?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -294,6 +305,7 @@ export type NewsScalarWhereWithAggregatesInput = {
   title?: Prisma.StringWithAggregatesFilter<"News"> | string
   link?: Prisma.StringWithAggregatesFilter<"News"> | string
   snippet?: Prisma.StringNullableWithAggregatesFilter<"News"> | string | null
+  summary?: Prisma.StringNullableWithAggregatesFilter<"News"> | string | null
   pubDate?: Prisma.StringNullableWithAggregatesFilter<"News"> | string | null
   sourceQuery?: Prisma.StringNullableWithAggregatesFilter<"News"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"News"> | Date | string
@@ -304,6 +316,7 @@ export type NewsCreateInput = {
   title: string
   link: string
   snippet?: string | null
+  summary?: string | null
   pubDate?: string | null
   sourceQuery?: string | null
   createdAt?: Date | string
@@ -316,6 +329,7 @@ export type NewsUncheckedCreateInput = {
   title: string
   link: string
   snippet?: string | null
+  summary?: string | null
   pubDate?: string | null
   sourceQuery?: string | null
   createdAt?: Date | string
@@ -327,6 +341,7 @@ export type NewsUpdateInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   link?: Prisma.StringFieldUpdateOperationsInput | string
   snippet?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   pubDate?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sourceQuery?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -339,6 +354,7 @@ export type NewsUncheckedUpdateInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   link?: Prisma.StringFieldUpdateOperationsInput | string
   snippet?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   pubDate?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sourceQuery?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -351,6 +367,7 @@ export type NewsCreateManyInput = {
   title: string
   link: string
   snippet?: string | null
+  summary?: string | null
   pubDate?: string | null
   sourceQuery?: string | null
   createdAt?: Date | string
@@ -361,6 +378,7 @@ export type NewsUpdateManyMutationInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   link?: Prisma.StringFieldUpdateOperationsInput | string
   snippet?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   pubDate?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sourceQuery?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -372,6 +390,7 @@ export type NewsUncheckedUpdateManyInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   link?: Prisma.StringFieldUpdateOperationsInput | string
   snippet?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   pubDate?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sourceQuery?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -383,6 +402,7 @@ export type NewsCountOrderByAggregateInput = {
   title?: Prisma.SortOrder
   link?: Prisma.SortOrder
   snippet?: Prisma.SortOrder
+  summary?: Prisma.SortOrder
   pubDate?: Prisma.SortOrder
   sourceQuery?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -398,6 +418,7 @@ export type NewsMaxOrderByAggregateInput = {
   title?: Prisma.SortOrder
   link?: Prisma.SortOrder
   snippet?: Prisma.SortOrder
+  summary?: Prisma.SortOrder
   pubDate?: Prisma.SortOrder
   sourceQuery?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -409,6 +430,7 @@ export type NewsMinOrderByAggregateInput = {
   title?: Prisma.SortOrder
   link?: Prisma.SortOrder
   snippet?: Prisma.SortOrder
+  summary?: Prisma.SortOrder
   pubDate?: Prisma.SortOrder
   sourceQuery?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -462,6 +484,7 @@ export type NewsCreateWithoutBriefingItemsInput = {
   title: string
   link: string
   snippet?: string | null
+  summary?: string | null
   pubDate?: string | null
   sourceQuery?: string | null
   createdAt?: Date | string
@@ -473,6 +496,7 @@ export type NewsUncheckedCreateWithoutBriefingItemsInput = {
   title: string
   link: string
   snippet?: string | null
+  summary?: string | null
   pubDate?: string | null
   sourceQuery?: string | null
   createdAt?: Date | string
@@ -499,6 +523,7 @@ export type NewsUpdateWithoutBriefingItemsInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   link?: Prisma.StringFieldUpdateOperationsInput | string
   snippet?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   pubDate?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sourceQuery?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -510,6 +535,7 @@ export type NewsUncheckedUpdateWithoutBriefingItemsInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   link?: Prisma.StringFieldUpdateOperationsInput | string
   snippet?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  summary?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   pubDate?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sourceQuery?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -552,6 +578,7 @@ export type NewsSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   title?: boolean
   link?: boolean
   snippet?: boolean
+  summary?: boolean
   pubDate?: boolean
   sourceQuery?: boolean
   createdAt?: boolean
@@ -565,6 +592,7 @@ export type NewsSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   title?: boolean
   link?: boolean
   snippet?: boolean
+  summary?: boolean
   pubDate?: boolean
   sourceQuery?: boolean
   createdAt?: boolean
@@ -576,6 +604,7 @@ export type NewsSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   title?: boolean
   link?: boolean
   snippet?: boolean
+  summary?: boolean
   pubDate?: boolean
   sourceQuery?: boolean
   createdAt?: boolean
@@ -587,13 +616,14 @@ export type NewsSelectScalar = {
   title?: boolean
   link?: boolean
   snippet?: boolean
+  summary?: boolean
   pubDate?: boolean
   sourceQuery?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type NewsOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "title" | "link" | "snippet" | "pubDate" | "sourceQuery" | "createdAt" | "updatedAt", ExtArgs["result"]["news"]>
+export type NewsOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "title" | "link" | "snippet" | "summary" | "pubDate" | "sourceQuery" | "createdAt" | "updatedAt", ExtArgs["result"]["news"]>
 export type NewsInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   briefingItems?: boolean | Prisma.News$briefingItemsArgs<ExtArgs>
   _count?: boolean | Prisma.NewsCountOutputTypeDefaultArgs<ExtArgs>
@@ -611,6 +641,7 @@ export type $NewsPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     title: string
     link: string
     snippet: string | null
+    summary: string | null
     pubDate: string | null
     sourceQuery: string | null
     createdAt: Date
@@ -1043,6 +1074,7 @@ export interface NewsFieldRefs {
   readonly title: Prisma.FieldRef<"News", 'String'>
   readonly link: Prisma.FieldRef<"News", 'String'>
   readonly snippet: Prisma.FieldRef<"News", 'String'>
+  readonly summary: Prisma.FieldRef<"News", 'String'>
   readonly pubDate: Prisma.FieldRef<"News", 'String'>
   readonly sourceQuery: Prisma.FieldRef<"News", 'String'>
   readonly createdAt: Prisma.FieldRef<"News", 'DateTime'>

@@ -41,6 +41,9 @@ export type BriefingMinAggregateOutputType = {
   categoryTag: string | null
   sentTo: string | null
   sentAt: Date | null
+  scheduledDate: Date | null
+  status: string | null
+  errorMessage: string | null
   createdAt: Date | null
 }
 
@@ -51,6 +54,9 @@ export type BriefingMaxAggregateOutputType = {
   categoryTag: string | null
   sentTo: string | null
   sentAt: Date | null
+  scheduledDate: Date | null
+  status: string | null
+  errorMessage: string | null
   createdAt: Date | null
 }
 
@@ -61,6 +67,9 @@ export type BriefingCountAggregateOutputType = {
   categoryTag: number
   sentTo: number
   sentAt: number
+  scheduledDate: number
+  status: number
+  errorMessage: number
   createdAt: number
   _all: number
 }
@@ -81,6 +90,9 @@ export type BriefingMinAggregateInputType = {
   categoryTag?: true
   sentTo?: true
   sentAt?: true
+  scheduledDate?: true
+  status?: true
+  errorMessage?: true
   createdAt?: true
 }
 
@@ -91,6 +103,9 @@ export type BriefingMaxAggregateInputType = {
   categoryTag?: true
   sentTo?: true
   sentAt?: true
+  scheduledDate?: true
+  status?: true
+  errorMessage?: true
   createdAt?: true
 }
 
@@ -101,6 +116,9 @@ export type BriefingCountAggregateInputType = {
   categoryTag?: true
   sentTo?: true
   sentAt?: true
+  scheduledDate?: true
+  status?: true
+  errorMessage?: true
   createdAt?: true
   _all?: true
 }
@@ -198,6 +216,9 @@ export type BriefingGroupByOutputType = {
   categoryTag: string | null
   sentTo: string | null
   sentAt: Date | null
+  scheduledDate: Date | null
+  status: string
+  errorMessage: string | null
   createdAt: Date
   _count: BriefingCountAggregateOutputType | null
   _avg: BriefingAvgAggregateOutputType | null
@@ -231,6 +252,9 @@ export type BriefingWhereInput = {
   categoryTag?: Prisma.StringNullableFilter<"Briefing"> | string | null
   sentTo?: Prisma.StringNullableFilter<"Briefing"> | string | null
   sentAt?: Prisma.DateTimeNullableFilter<"Briefing"> | Date | string | null
+  scheduledDate?: Prisma.DateTimeNullableFilter<"Briefing"> | Date | string | null
+  status?: Prisma.StringFilter<"Briefing"> | string
+  errorMessage?: Prisma.StringNullableFilter<"Briefing"> | string | null
   createdAt?: Prisma.DateTimeFilter<"Briefing"> | Date | string
   items?: Prisma.BriefingItemListRelationFilter
 }
@@ -242,12 +266,16 @@ export type BriefingOrderByWithRelationInput = {
   categoryTag?: Prisma.SortOrderInput | Prisma.SortOrder
   sentTo?: Prisma.SortOrderInput | Prisma.SortOrder
   sentAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  scheduledDate?: Prisma.SortOrderInput | Prisma.SortOrder
+  status?: Prisma.SortOrder
+  errorMessage?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   items?: Prisma.BriefingItemOrderByRelationAggregateInput
 }
 
 export type BriefingWhereUniqueInput = Prisma.AtLeast<{
   id?: number
+  scheduledDate?: Date | string
   AND?: Prisma.BriefingWhereInput | Prisma.BriefingWhereInput[]
   OR?: Prisma.BriefingWhereInput[]
   NOT?: Prisma.BriefingWhereInput | Prisma.BriefingWhereInput[]
@@ -256,9 +284,11 @@ export type BriefingWhereUniqueInput = Prisma.AtLeast<{
   categoryTag?: Prisma.StringNullableFilter<"Briefing"> | string | null
   sentTo?: Prisma.StringNullableFilter<"Briefing"> | string | null
   sentAt?: Prisma.DateTimeNullableFilter<"Briefing"> | Date | string | null
+  status?: Prisma.StringFilter<"Briefing"> | string
+  errorMessage?: Prisma.StringNullableFilter<"Briefing"> | string | null
   createdAt?: Prisma.DateTimeFilter<"Briefing"> | Date | string
   items?: Prisma.BriefingItemListRelationFilter
-}, "id">
+}, "id" | "scheduledDate">
 
 export type BriefingOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
@@ -267,6 +297,9 @@ export type BriefingOrderByWithAggregationInput = {
   categoryTag?: Prisma.SortOrderInput | Prisma.SortOrder
   sentTo?: Prisma.SortOrderInput | Prisma.SortOrder
   sentAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  scheduledDate?: Prisma.SortOrderInput | Prisma.SortOrder
+  status?: Prisma.SortOrder
+  errorMessage?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   _count?: Prisma.BriefingCountOrderByAggregateInput
   _avg?: Prisma.BriefingAvgOrderByAggregateInput
@@ -285,6 +318,9 @@ export type BriefingScalarWhereWithAggregatesInput = {
   categoryTag?: Prisma.StringNullableWithAggregatesFilter<"Briefing"> | string | null
   sentTo?: Prisma.StringNullableWithAggregatesFilter<"Briefing"> | string | null
   sentAt?: Prisma.DateTimeNullableWithAggregatesFilter<"Briefing"> | Date | string | null
+  scheduledDate?: Prisma.DateTimeNullableWithAggregatesFilter<"Briefing"> | Date | string | null
+  status?: Prisma.StringWithAggregatesFilter<"Briefing"> | string
+  errorMessage?: Prisma.StringNullableWithAggregatesFilter<"Briefing"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Briefing"> | Date | string
 }
 
@@ -294,6 +330,9 @@ export type BriefingCreateInput = {
   categoryTag?: string | null
   sentTo?: string | null
   sentAt?: Date | string | null
+  scheduledDate?: Date | string | null
+  status?: string
+  errorMessage?: string | null
   createdAt?: Date | string
   items?: Prisma.BriefingItemCreateNestedManyWithoutBriefingInput
 }
@@ -305,6 +344,9 @@ export type BriefingUncheckedCreateInput = {
   categoryTag?: string | null
   sentTo?: string | null
   sentAt?: Date | string | null
+  scheduledDate?: Date | string | null
+  status?: string
+  errorMessage?: string | null
   createdAt?: Date | string
   items?: Prisma.BriefingItemUncheckedCreateNestedManyWithoutBriefingInput
 }
@@ -315,6 +357,9 @@ export type BriefingUpdateInput = {
   categoryTag?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sentTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  scheduledDate?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   items?: Prisma.BriefingItemUpdateManyWithoutBriefingNestedInput
 }
@@ -326,6 +371,9 @@ export type BriefingUncheckedUpdateInput = {
   categoryTag?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sentTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  scheduledDate?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   items?: Prisma.BriefingItemUncheckedUpdateManyWithoutBriefingNestedInput
 }
@@ -337,6 +385,9 @@ export type BriefingCreateManyInput = {
   categoryTag?: string | null
   sentTo?: string | null
   sentAt?: Date | string | null
+  scheduledDate?: Date | string | null
+  status?: string
+  errorMessage?: string | null
   createdAt?: Date | string
 }
 
@@ -346,6 +397,9 @@ export type BriefingUpdateManyMutationInput = {
   categoryTag?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sentTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  scheduledDate?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -356,6 +410,9 @@ export type BriefingUncheckedUpdateManyInput = {
   categoryTag?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sentTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  scheduledDate?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -366,6 +423,9 @@ export type BriefingCountOrderByAggregateInput = {
   categoryTag?: Prisma.SortOrder
   sentTo?: Prisma.SortOrder
   sentAt?: Prisma.SortOrder
+  scheduledDate?: Prisma.SortOrder
+  status?: Prisma.SortOrder
+  errorMessage?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
 }
 
@@ -380,6 +440,9 @@ export type BriefingMaxOrderByAggregateInput = {
   categoryTag?: Prisma.SortOrder
   sentTo?: Prisma.SortOrder
   sentAt?: Prisma.SortOrder
+  scheduledDate?: Prisma.SortOrder
+  status?: Prisma.SortOrder
+  errorMessage?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
 }
 
@@ -390,6 +453,9 @@ export type BriefingMinOrderByAggregateInput = {
   categoryTag?: Prisma.SortOrder
   sentTo?: Prisma.SortOrder
   sentAt?: Prisma.SortOrder
+  scheduledDate?: Prisma.SortOrder
+  status?: Prisma.SortOrder
+  errorMessage?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
 }
 
@@ -426,6 +492,9 @@ export type BriefingCreateWithoutItemsInput = {
   categoryTag?: string | null
   sentTo?: string | null
   sentAt?: Date | string | null
+  scheduledDate?: Date | string | null
+  status?: string
+  errorMessage?: string | null
   createdAt?: Date | string
 }
 
@@ -436,6 +505,9 @@ export type BriefingUncheckedCreateWithoutItemsInput = {
   categoryTag?: string | null
   sentTo?: string | null
   sentAt?: Date | string | null
+  scheduledDate?: Date | string | null
+  status?: string
+  errorMessage?: string | null
   createdAt?: Date | string
 }
 
@@ -461,6 +533,9 @@ export type BriefingUpdateWithoutItemsInput = {
   categoryTag?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sentTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  scheduledDate?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -471,6 +546,9 @@ export type BriefingUncheckedUpdateWithoutItemsInput = {
   categoryTag?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sentTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  scheduledDate?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -512,6 +590,9 @@ export type BriefingSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs
   categoryTag?: boolean
   sentTo?: boolean
   sentAt?: boolean
+  scheduledDate?: boolean
+  status?: boolean
+  errorMessage?: boolean
   createdAt?: boolean
   items?: boolean | Prisma.Briefing$itemsArgs<ExtArgs>
   _count?: boolean | Prisma.BriefingCountOutputTypeDefaultArgs<ExtArgs>
@@ -524,6 +605,9 @@ export type BriefingSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Exte
   categoryTag?: boolean
   sentTo?: boolean
   sentAt?: boolean
+  scheduledDate?: boolean
+  status?: boolean
+  errorMessage?: boolean
   createdAt?: boolean
 }, ExtArgs["result"]["briefing"]>
 
@@ -534,6 +618,9 @@ export type BriefingSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Exte
   categoryTag?: boolean
   sentTo?: boolean
   sentAt?: boolean
+  scheduledDate?: boolean
+  status?: boolean
+  errorMessage?: boolean
   createdAt?: boolean
 }, ExtArgs["result"]["briefing"]>
 
@@ -544,10 +631,13 @@ export type BriefingSelectScalar = {
   categoryTag?: boolean
   sentTo?: boolean
   sentAt?: boolean
+  scheduledDate?: boolean
+  status?: boolean
+  errorMessage?: boolean
   createdAt?: boolean
 }
 
-export type BriefingOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "query" | "summary" | "categoryTag" | "sentTo" | "sentAt" | "createdAt", ExtArgs["result"]["briefing"]>
+export type BriefingOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "query" | "summary" | "categoryTag" | "sentTo" | "sentAt" | "scheduledDate" | "status" | "errorMessage" | "createdAt", ExtArgs["result"]["briefing"]>
 export type BriefingInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   items?: boolean | Prisma.Briefing$itemsArgs<ExtArgs>
   _count?: boolean | Prisma.BriefingCountOutputTypeDefaultArgs<ExtArgs>
@@ -567,6 +657,9 @@ export type $BriefingPayload<ExtArgs extends runtime.Types.Extensions.InternalAr
     categoryTag: string | null
     sentTo: string | null
     sentAt: Date | null
+    scheduledDate: Date | null
+    status: string
+    errorMessage: string | null
     createdAt: Date
   }, ExtArgs["result"]["briefing"]>
   composites: {}
@@ -998,6 +1091,9 @@ export interface BriefingFieldRefs {
   readonly categoryTag: Prisma.FieldRef<"Briefing", 'String'>
   readonly sentTo: Prisma.FieldRef<"Briefing", 'String'>
   readonly sentAt: Prisma.FieldRef<"Briefing", 'DateTime'>
+  readonly scheduledDate: Prisma.FieldRef<"Briefing", 'DateTime'>
+  readonly status: Prisma.FieldRef<"Briefing", 'String'>
+  readonly errorMessage: Prisma.FieldRef<"Briefing", 'String'>
   readonly createdAt: Prisma.FieldRef<"Briefing", 'DateTime'>
 }
     

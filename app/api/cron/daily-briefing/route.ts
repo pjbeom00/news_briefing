@@ -1,25 +1,45 @@
 // app/api/cron/daily-briefing/route.ts
+// (2026-04-01) Cron 자동 브리핑 기능 추가
 
-import { runDailyBriefing } from "@/lib/auto-briefing";
+import { getBriefingEnv } from "@/lib/env";
+import { runDailyBriefing } from "@/lib/briefing-runner";
 
-function unauthorized() {
-  return Response.json({ error: "Unauthorized" }, { status: 401 });
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function getBearerToken(authorizationHeader: string | null) {
+  if (!authorizationHeader) {
+    return "";
+  }
+
+  const prefix = "Bearer ";
+
+  if (!authorizationHeader.startsWith(prefix)) {
+    return "";
+  }
+
+  return authorizationHeader.slice(prefix.length).trim();
 }
 
-export async function GET(req: Request) {
+export async function GET(request: Request) {
   try {
-    const cronSecret = process.env.CRON_SECRET;
-    const authHeader = req.headers.get("authorization");
+    const { CRON_SECRET } = getBriefingEnv();
 
-    if (!cronSecret) {
+    const authorizationToken = getBearerToken(
+      request.headers.get("authorization")
+    );
+
+    const headerToken =
+      authorizationToken || request.headers.get("x-cron-secret") || "";
+
+    if (headerToken !== CRON_SECRET) {
       return Response.json(
-        { error: "CRON_SECRET 환경변수가 설정되지 않았습니다." },
-        { status: 500 }
+        {
+          ok: false,
+          message: "Unauthorized",
+        },
+        { status: 401 }
       );
-    }
-
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return unauthorized();
     }
 
     const result = await runDailyBriefing();
@@ -29,7 +49,10 @@ export async function GET(req: Request) {
     console.error("DAILY BRIEFING CRON ERROR:", error);
 
     return Response.json(
-      { error: error?.message || "자동 브리핑 실행 중 오류가 발생했습니다." },
+      {
+        ok: false,
+        message: error?.message || "자동 브리핑 실행 중 오류가 발생했습니다.",
+      },
       { status: 500 }
     );
   }

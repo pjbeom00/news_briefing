@@ -1,7 +1,8 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 // Get a free hosted Postgres database in seconds: `npx create-db`
+
+// prisma/schema.prisma
 
 generator client {
   provider = "prisma-client"
@@ -17,6 +18,7 @@ model News {
   title         String
   link          String         @unique
   snippet       String?
+  summary       String?
   pubDate       String?
   sourceQuery   String?
   createdAt     DateTime       @default(now())
@@ -25,14 +27,19 @@ model News {
 }
 
 model Briefing {
-  id          Int            @id @default(autoincrement())
-  query       String
-  summary     String
-  categoryTag String?
-  sentTo      String?
-  sentAt      DateTime?
-  createdAt   DateTime       @default(now())
-  items       BriefingItem[]
+  id            Int            @id @default(autoincrement())
+  query         String
+  summary       String
+  categoryTag   String?
+  sentTo        String?
+  sentAt        DateTime?
+  scheduledDate DateTime?      @unique
+  status        String         @default("PENDING")
+  errorMessage  String?
+  createdAt     DateTime       @default(now())
+  items         BriefingItem[]
+
+  @@index([status])
 }
 
 model BriefingItem {
