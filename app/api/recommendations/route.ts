@@ -1,7 +1,12 @@
 // app/api/recommendations/route.ts
 
+// app/api/recommendations/route.ts
+
 import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/prisma";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type RecommendationItem = {
   keyword: string;
@@ -22,9 +27,18 @@ type NewsRow = {
   title: string;
 };
 
-const apiKey = process.env.GEMINI_API_KEY;
+type RecommendationResponse = {
+  source: "AI" | "RULE" | "CACHE";
+  data: RecommendationItem[];
+};
 
+const apiKey = process.env.GEMINI_API_KEY;
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+
+const CACHE_TTL_MS = 60 * 1000;
+
+let cachedResponse: RecommendationResponse | null = null;
+let cachedAt = 0;
 
 function normalizeText(value: string) {
   return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -123,8 +137,42 @@ function safeJsonParse<T>(text: string): T | null {
   }
 }
 
+function isQuotaError(error: unknown): boolean {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    (error as { status?: number }).status === 429
+  ) {
+    return true;
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof (error as { message?: string }).message === "string"
+  ) {
+    const message = (error as { message: string }).message;
+
+    return (
+      message.includes("RESOURCE_EXHAUSTED") ||
+      message.includes("Quota exceeded") ||
+      message.includes('"code":429')
+    );
+  }
+
+  return false;
+}
+
 export async function GET() {
   try {
+    const now = Date.now();
+
+    if (cachedResponse && now - cachedAt < CACHE_TTL_MS) {
+      return Response.json(cachedResponse);
+    }
+
     const [savedQueries, briefings, news] = await Promise.all([
       prisma.savedQuery.findMany({
         orderBy: [{ isFavorite: "desc" }, { updatedAt: "desc" }],
@@ -151,17 +199,22 @@ export async function GET() {
       }),
     ]);
 
-    const fallback = buildRuleBasedRecommendations({
+    const fallbackData = buildRuleBasedRecommendations({
       savedQueries,
       briefings,
       newsTitles: news.map((x: NewsRow) => x.title),
     });
 
+    const fallbackResponse: RecommendationResponse = {
+      source: "RULE",
+      data: fallbackData,
+    };
+
     if (!ai) {
-      return Response.json({
-        source: "RULE",
-        data: fallback,
-      });
+      cachedResponse = fallbackResponse;
+      cachedAt = now;
+
+      return Response.json(fallbackResponse);
     }
 
     const prompt = `
@@ -185,60 +238,78 @@ ${briefings.map((x: BriefingRow) => `- ${x.query} (${x.categoryTag || "미분류
 ${news.map((x: NewsRow) => `- ${x.title}`).join("\n")}
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseJsonSchema: {
-          type: "object",
-          properties: {
-            data: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  keyword: { type: "string" },
-                  reason: { type: "string" },
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseJsonSchema: {
+            type: "object",
+            properties: {
+              data: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    keyword: { type: "string" },
+                    reason: { type: "string" },
+                  },
+                  required: ["keyword", "reason"],
                 },
-                required: ["keyword", "reason"],
               },
             },
+            required: ["data"],
           },
-          required: ["data"],
         },
-      },
-    });
-
-    const text = response.text || "";
-    const parsed = safeJsonParse<{ data: RecommendationItem[] }>(text);
-
-    if (!parsed || !Array.isArray(parsed.data) || !parsed.data.length) {
-      return Response.json({
-        source: "RULE",
-        data: fallback,
       });
+
+      const text = response.text || "";
+      const parsed = safeJsonParse<{ data: RecommendationItem[] }>(text);
+
+      if (!parsed || !Array.isArray(parsed.data) || !parsed.data.length) {
+        cachedResponse = fallbackResponse;
+        cachedAt = now;
+
+        return Response.json(fallbackResponse);
+      }
+
+      const cleaned = parsed.data
+        .map((item) => ({
+          keyword: String(item.keyword || "").trim(),
+          reason: String(item.reason || "").trim(),
+        }))
+        .filter((item) => item.keyword)
+        .slice(0, 5);
+
+      if (!cleaned.length) {
+        cachedResponse = fallbackResponse;
+        cachedAt = now;
+
+        return Response.json(fallbackResponse);
+      }
+
+      const aiResponse: RecommendationResponse = {
+        source: "AI",
+        data: cleaned,
+      };
+
+      cachedResponse = aiResponse;
+      cachedAt = now;
+
+      return Response.json(aiResponse);
+    } catch (error: unknown) {
+      if (isQuotaError(error)) {
+        console.error("RECOMMENDATIONS QUOTA FALLBACK:", error);
+
+        cachedResponse = fallbackResponse;
+        cachedAt = now;
+
+        return Response.json(fallbackResponse);
+      }
+
+      throw error;
     }
-
-    const cleaned = parsed.data
-      .map((item) => ({
-        keyword: String(item.keyword || "").trim(),
-        reason: String(item.reason || "").trim(),
-      }))
-      .filter((item) => item.keyword)
-      .slice(0, 5);
-
-    if (!cleaned.length) {
-      return Response.json({
-        source: "RULE",
-        data: fallback,
-      });
-    }
-
-    return Response.json({
-      source: "AI",
-      data: cleaned,
-    });
   } catch (error: any) {
     console.error("RECOMMENDATIONS ERROR:", error);
 
