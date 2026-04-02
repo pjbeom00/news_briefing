@@ -1,7 +1,4 @@
-// app/page.tsx - 메인 페이지, 뉴스 30개 검색 후 최종 선정 기사 10개만 화면에 보이도록 정리
-// (2026-03-27) : UI 업그레이드, AI 추천 기능 추가
-// (2026-03-30) : 검색 결과에 점수 정보 포함, 상위 20개 --> Gemini 재선별
-// (2026-04-02) : page 메뉴 구조 변경
+// (2026-04-02) app/page.tsx : 메뉴 재구성
 
 import Link from "next/link";
 
@@ -34,9 +31,11 @@ export default function HomePage() {
     <main
       style={{
         minHeight: "100vh",
-        background: "linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%)",
+        background:
+          "linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%)",
         padding: "48px 24px",
-        fontFamily: "Arial, Apple SD Gothic Neo, Noto Sans KR, sans-serif",
+        fontFamily:
+          "Arial, Apple SD Gothic Neo, Noto Sans KR, sans-serif",
       }}
     >
       <div
@@ -125,6 +124,7 @@ export default function HomePage() {
                   display: "flex",
                   flexDirection: "column",
                   justifyContent: "space-between",
+                  transition: "transform 0.15s ease, box-shadow 0.15s ease",
                   cursor: "pointer",
                 }}
               >
