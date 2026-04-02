@@ -20,6 +20,8 @@ export async function GET(_: Request, context: RouteContext) {
       return Response.json(
         {
           error: "유효하지 않은 브리핑 ID입니다.",
+          data: null,
+          items: [],
         },
         { status: 400 }
       );
@@ -41,24 +43,15 @@ export async function GET(_: Request, context: RouteContext) {
       return Response.json(
         {
           error: "브리핑을 찾을 수 없습니다.",
+          data: null,
+          items: [],
         },
         { status: 404 }
       );
     }
 
-    return Response.json({
-      data: {
-        id: briefing.id,
-        query: briefing.query,
-        summary: briefing.summary,
-        categoryTag: briefing.categoryTag,
-        sentTo: briefing.sentTo,
-        sentAt: briefing.sentAt,
-        scheduledDate: briefing.scheduledDate,
-        status: briefing.status,
-        errorMessage: briefing.errorMessage,
-        createdAt: briefing.createdAt,
-        items: briefing.items.map((item) => ({
+    const normalizedItems = Array.isArray(briefing.items)
+      ? briefing.items.map((item) => ({
           id: item.id,
           rankOrder: item.rankOrder,
           news: {
@@ -71,8 +64,39 @@ export async function GET(_: Request, context: RouteContext) {
             sourceQuery: item.news.sourceQuery,
             createdAt: item.news.createdAt,
           },
-        })),
-      },
+        }))
+      : [];
+
+    const normalized = {
+      id: briefing.id,
+      query: briefing.query,
+      summary: briefing.summary,
+      categoryTag: briefing.categoryTag,
+      sentTo: briefing.sentTo,
+      sentAt: briefing.sentAt,
+      scheduledDate: briefing.scheduledDate,
+      status: briefing.status,
+      errorMessage: briefing.errorMessage,
+      createdAt: briefing.createdAt,
+      items: normalizedItems,
+    };
+
+    return Response.json({
+      // 신버전 사용처용
+      data: normalized,
+
+      // 구버전 사용처용 하위 호환
+      id: normalized.id,
+      query: normalized.query,
+      summary: normalized.summary,
+      categoryTag: normalized.categoryTag,
+      sentTo: normalized.sentTo,
+      sentAt: normalized.sentAt,
+      scheduledDate: normalized.scheduledDate,
+      status: normalized.status,
+      errorMessage: normalized.errorMessage,
+      createdAt: normalized.createdAt,
+      items: normalized.items,
     });
   } catch (error: any) {
     console.error("BRIEFING DETAIL ERROR:", error);
@@ -80,6 +104,8 @@ export async function GET(_: Request, context: RouteContext) {
     return Response.json(
       {
         error: error?.message || "브리핑 상세 조회 중 오류가 발생했습니다.",
+        data: null,
+        items: [],
       },
       { status: 500 }
     );
