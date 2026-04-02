@@ -1,7 +1,5 @@
 // app/api/recommendations/route.ts
 
-// app/api/recommendations/route.ts
-
 import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/prisma";
 
@@ -166,9 +164,9 @@ function isQuotaError(error: unknown): boolean {
 }
 
 export async function GET() {
-  try {
-    const now = Date.now();
+  const now = Date.now();
 
+  try {
     if (cachedResponse && now - cachedAt < CACHE_TTL_MS) {
       return Response.json(cachedResponse);
     }
@@ -213,7 +211,6 @@ export async function GET() {
     if (!ai) {
       cachedResponse = fallbackResponse;
       cachedAt = now;
-
       return Response.json(fallbackResponse);
     }
 
@@ -270,7 +267,6 @@ ${news.map((x: NewsRow) => `- ${x.title}`).join("\n")}
       if (!parsed || !Array.isArray(parsed.data) || !parsed.data.length) {
         cachedResponse = fallbackResponse;
         cachedAt = now;
-
         return Response.json(fallbackResponse);
       }
 
@@ -285,7 +281,6 @@ ${news.map((x: NewsRow) => `- ${x.title}`).join("\n")}
       if (!cleaned.length) {
         cachedResponse = fallbackResponse;
         cachedAt = now;
-
         return Response.json(fallbackResponse);
       }
 
@@ -301,10 +296,8 @@ ${news.map((x: NewsRow) => `- ${x.title}`).join("\n")}
     } catch (error: unknown) {
       if (isQuotaError(error)) {
         console.error("RECOMMENDATIONS QUOTA FALLBACK:", error);
-
         cachedResponse = fallbackResponse;
         cachedAt = now;
-
         return Response.json(fallbackResponse);
       }
 
@@ -313,11 +306,11 @@ ${news.map((x: NewsRow) => `- ${x.title}`).join("\n")}
   } catch (error: any) {
     console.error("RECOMMENDATIONS ERROR:", error);
 
-    return Response.json(
-      {
-        error: error?.message || "추천 키워드 생성 중 오류가 발생했습니다.",
-      },
-      { status: 500 }
-    );
+    const safeResponse: RecommendationResponse = {
+      source: "RULE",
+      data: [],
+    };
+
+    return Response.json(safeResponse);
   }
 }

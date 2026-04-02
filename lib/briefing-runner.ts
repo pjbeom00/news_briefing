@@ -1,8 +1,6 @@
 // (2026-04-01) lib/briefing-runner.ts
 // (2026-04-02) 중복 기사 제거 + 구조화된 Gemini 브리핑 + 메일 품질 개선
 
-// lib/briefing-runner.ts
-
 import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/prisma";
 import { sendMail } from "@/lib/gmail";
@@ -264,6 +262,21 @@ function buildFallbackStructuredBriefing(input: {
   };
 }
 
+function buildBriefingSubject(queryText: string, isResend = false) {
+  const firstKeyword =
+    queryText
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)[0] || "뉴스";
+
+  const compactKeyword =
+    firstKeyword.length > 24 ? `${firstKeyword.slice(0, 24)}...` : firstKeyword;
+
+  return isResend
+    ? `[${compactKeyword}] 브리핑 [재발송]`
+    : `[${compactKeyword}] 브리핑`;
+}
+
 function buildMailHtml(input: {
   scheduledDateLabel: string;
   structured: StructuredBriefing;
@@ -332,7 +345,7 @@ function buildMailHtml(input: {
       <table width="100%" cellpadding="0" cellspacing="0" style="max-width:760px;margin:0 auto;">
         <tr>
           <td style="background:#0f172a;border-radius:18px;padding:26px 24px 22px 24px;">
-            <div style="font-size:28px;font-weight:800;color:#ffffff;margin-bottom:8px;">CJ대한통운 브리핑</div>
+            <div style="font-size:28px;font-weight:800;color:#ffffff;margin-bottom:8px;">브리핑</div>
             <div style="font-size:12px;color:#cbd5e1;">${escapeHtml(input.scheduledDateLabel)} 오전 브리핑</div>
           </td>
         </tr>
@@ -827,11 +840,13 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
     scheduledDateLabel,
   });
 
+  const briefingQueryText = queryCandidates.join(", ");
+
   const briefing = existing
     ? await prisma.briefing.update({
         where: { id: existing.id },
         data: {
-          query: queryCandidates.join(", "),
+          query: briefingQueryText,
           summary: overallSummary,
           categoryTag: "DAILY_AUTO",
           sentTo: BRIEFING_TO_EMAIL,
@@ -842,7 +857,7 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
       })
     : await prisma.briefing.create({
         data: {
-          query: queryCandidates.join(", "),
+          query: briefingQueryText,
           summary: overallSummary,
           categoryTag: "DAILY_AUTO",
           sentTo: BRIEFING_TO_EMAIL,
@@ -868,7 +883,7 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
   try {
     await sendMail({
       to: BRIEFING_TO_EMAIL,
-      subject: `[CJ대한통운 브리핑] ${scheduledDateLabel} 오전 브리핑`,
+      subject: buildBriefingSubject(briefingQueryText, false),
       html,
     });
 
@@ -971,7 +986,7 @@ export async function resendBriefing(briefingId: number): Promise<ResendBriefing
   try {
     await sendMail({
       to: BRIEFING_TO_EMAIL,
-      subject: `[CJ대한통운 브리핑][재발송] ${scheduledDateLabel} 오전 브리핑`,
+      subject: buildBriefingSubject(briefing.query, true),
       html,
     });
 
