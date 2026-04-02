@@ -48,6 +48,13 @@ type BriefingDetail = {
   items: BriefingDetailItem[];
 };
 
+type SummarySections = {
+  trend: string[];
+  keyPoints: string[];
+  companyInsight: string[];
+  comment: string[];
+};
+
 function formatDate(value: string | null) {
   if (!value) return "-";
 
@@ -75,6 +82,135 @@ function getStatusColor(status: string) {
     default:
       return "#475569";
   }
+}
+
+function splitSummaryToParagraphs(text: string) {
+  const normalized = String(text || "")
+    .replace(/\s+/g, " ")
+    .replace(/([.!?])\s+/g, "$1\n")
+    .replace(/다\.\s+/g, "다.\n")
+    .trim();
+
+  return normalized
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseStructuredSummary(text: string): SummarySections {
+  const paragraphs = splitSummaryToParagraphs(text);
+
+  const sections: SummarySections = {
+    trend: [],
+    keyPoints: [],
+    companyInsight: [],
+    comment: [],
+  };
+
+  let currentSection: keyof SummarySections = "trend";
+
+  for (const paragraph of paragraphs) {
+    if (
+      paragraph.includes("오늘의 핵심 동향") ||
+      paragraph.includes("핵심 동향")
+    ) {
+      currentSection = "trend";
+      sections.trend.push(
+        paragraph.replace(/^.*?(오늘의 핵심 동향|핵심 동향)\s*[:-]?\s*/u, "").trim() ||
+          paragraph
+      );
+      continue;
+    }
+
+    if (
+      paragraph.includes("기사별 핵심 포인트") ||
+      paragraph.includes("핵심 포인트")
+    ) {
+      currentSection = "keyPoints";
+      const cleaned = paragraph.replace(
+        /^.*?(기사별 핵심 포인트|핵심 포인트)\s*[:-]?\s*/u,
+        ""
+      ).trim();
+
+      if (cleaned) {
+        sections.keyPoints.push(cleaned);
+      }
+      continue;
+    }
+
+    if (
+      paragraph.includes("기업 관점 요약") ||
+      paragraph.includes("기업 관점")
+    ) {
+      currentSection = "companyInsight";
+      sections.companyInsight.push(
+        paragraph.replace(/^.*?(기업 관점 요약|기업 관점)\s*[:-]?\s*/u, "").trim() ||
+          paragraph
+      );
+      continue;
+    }
+
+    if (
+      paragraph.includes("마지막 코멘트") ||
+      paragraph.includes("코멘트")
+    ) {
+      currentSection = "comment";
+      sections.comment.push(
+        paragraph.replace(/^.*?(마지막 코멘트|코멘트)\s*[:-]?\s*/u, "").trim() ||
+          paragraph
+      );
+      continue;
+    }
+
+    sections[currentSection].push(paragraph);
+  }
+
+  if (
+    sections.trend.length === 0 &&
+    sections.keyPoints.length === 0 &&
+    sections.companyInsight.length === 0 &&
+    sections.comment.length === 0
+  ) {
+    return {
+      trend: paragraphs.slice(0, 2),
+      keyPoints: paragraphs.slice(2, 5),
+      companyInsight: paragraphs.slice(5, 7),
+      comment: paragraphs.slice(7),
+    };
+  }
+
+  return sections;
+}
+
+function SectionCard(props: {
+  title: string;
+  accentBg: string;
+  accentBorder: string;
+  titleColor: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        padding: 18,
+        borderRadius: 16,
+        background: props.accentBg,
+        border: `1px solid ${props.accentBorder}`,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 800,
+          color: props.titleColor,
+          marginBottom: 12,
+        }}
+      >
+        {props.title}
+      </div>
+      {props.children}
+    </div>
+  );
 }
 
 export default function AdminBriefingsPage() {
@@ -173,8 +309,16 @@ export default function AdminBriefingsPage() {
     }
   }, [selectedId]);
 
-  const selectedSummary = useMemo(() => {
-    return detail?.summary || "";
+  const summarySections = useMemo(() => {
+    return parseStructuredSummary(detail?.summary || "");
+  }, [detail]);
+
+  const highlightedItems = useMemo(() => {
+    return detail?.items.slice(0, 3) || [];
+  }, [detail]);
+
+  const normalItems = useMemo(() => {
+    return detail?.items.slice(3) || [];
   }, [detail]);
 
   return (
@@ -183,8 +327,7 @@ export default function AdminBriefingsPage() {
         padding: 24,
         background: "#f8fafc",
         minHeight: "100vh",
-        fontFamily:
-          "Arial, Apple SD Gothic Neo, Noto Sans KR, sans-serif",
+        fontFamily: "Arial, Apple SD Gothic Neo, Noto Sans KR, sans-serif",
       }}
     >
       <div style={{ maxWidth: 1400, margin: "0 auto" }}>
@@ -370,6 +513,10 @@ export default function AdminBriefingsPage() {
                         color: "#111827",
                         lineHeight: 1.6,
                         marginBottom: 8,
+                        display: "-webkit-box",
+                        WebkitLineClamp: 5,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
                       }}
                     >
                       {item.summary}
@@ -503,27 +650,122 @@ export default function AdminBriefingsPage() {
                   </div>
                 </div>
 
-                <div
-                  style={{
-                    marginBottom: 18,
-                    padding: 16,
-                    borderRadius: 14,
-                    background: "#f8fafc",
-                    border: "1px solid #e2e8f0",
-                  }}
-                >
+                <div style={{ display: "grid", gap: 14, marginBottom: 20 }}>
+                  <SectionCard
+                    title="오늘의 핵심 동향"
+                    accentBg="#e0f2fe"
+                    accentBorder="#7dd3fc"
+                    titleColor="#0f172a"
+                  >
+                    {summarySections.trend.length > 0 ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {summarySections.trend.map((paragraph, index) => (
+                          <p
+                            key={`trend-${index}`}
+                            style={{
+                              margin: 0,
+                              fontSize: 15,
+                              lineHeight: 1.9,
+                              color: "#1e293b",
+                              wordBreak: "keep-all",
+                            }}
+                          >
+                            {paragraph}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 14, color: "#64748b" }}>내용이 없습니다.</div>
+                    )}
+                  </SectionCard>
+
+                  <SectionCard
+                    title="핵심 포인트"
+                    accentBg="#ffffff"
+                    accentBorder="#dbeafe"
+                    titleColor="#2563eb"
+                  >
+                    {summarySections.keyPoints.length > 0 ? (
+                      <ul style={{ margin: 0, paddingLeft: 20 }}>
+                        {summarySections.keyPoints.map((point, index) => (
+                          <li
+                            key={`point-${index}`}
+                            style={{
+                              marginBottom: 8,
+                              fontSize: 14,
+                              lineHeight: 1.9,
+                              color: "#1e293b",
+                            }}
+                          >
+                            {point}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div style={{ fontSize: 14, color: "#64748b" }}>내용이 없습니다.</div>
+                    )}
+                  </SectionCard>
+
                   <div
                     style={{
-                      fontSize: 14,
-                      fontWeight: 800,
-                      color: "#0f172a",
-                      marginBottom: 8,
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 14,
                     }}
                   >
-                    브리핑 요약
-                  </div>
-                  <div style={{ fontSize: 14, lineHeight: 1.8, color: "#1e293b" }}>
-                    {selectedSummary}
+                    <SectionCard
+                      title="기업 관점"
+                      accentBg="#f8fafc"
+                      accentBorder="#e2e8f0"
+                      titleColor="#0f172a"
+                    >
+                      {summarySections.companyInsight.length > 0 ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          {summarySections.companyInsight.map((paragraph, index) => (
+                            <p
+                              key={`company-${index}`}
+                              style={{
+                                margin: 0,
+                                fontSize: 14,
+                                lineHeight: 1.9,
+                                color: "#334155",
+                              }}
+                            >
+                              {paragraph}
+                            </p>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 14, color: "#64748b" }}>내용이 없습니다.</div>
+                      )}
+                    </SectionCard>
+
+                    <SectionCard
+                      title="마지막 코멘트"
+                      accentBg="#fff7ed"
+                      accentBorder="#fdba74"
+                      titleColor="#9a3412"
+                    >
+                      {summarySections.comment.length > 0 ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          {summarySections.comment.map((paragraph, index) => (
+                            <p
+                              key={`comment-${index}`}
+                              style={{
+                                margin: 0,
+                                fontSize: 14,
+                                lineHeight: 1.9,
+                                color: "#7c2d12",
+                              }}
+                            >
+                              {paragraph}
+                            </p>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 14, color: "#64748b" }}>내용이 없습니다.</div>
+                      )}
+                    </SectionCard>
                   </div>
                 </div>
 
@@ -555,102 +797,161 @@ export default function AdminBriefingsPage() {
                   기사 목록
                 </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {detail.items.map((item) => (
+                {highlightedItems.length > 0 ? (
+                  <div style={{ marginBottom: 24 }}>
                     <div
-                      key={item.id}
                       style={{
-                        border: "1px solid #e2e8f0",
-                        borderRadius: 14,
-                        padding: 16,
-                        background: "#ffffff",
+                        fontSize: 15,
+                        fontWeight: 800,
+                        color: "#2563eb",
+                        marginBottom: 12,
                       }}
                     >
-                      <div
-                        style={{
-                          display: "inline-block",
-                          marginBottom: 10,
-                          fontSize: 12,
-                          fontWeight: 800,
-                          color: "#fff",
-                          background: "#2563eb",
-                          borderRadius: 999,
-                          padding: "4px 10px",
-                        }}
-                      >
-                        TOP {item.rankOrder}
-                      </div>
+                      상위 3개 핵심 기사
+                    </div>
 
-                      <div
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 800,
-                          color: "#111827",
-                          lineHeight: 1.6,
-                          marginBottom: 8,
-                        }}
-                      >
-                        <a
-                          href={item.news.link}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ color: "#111827", textDecoration: "none" }}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      {highlightedItems.map((item) => (
+                        <div
+                          key={item.id}
+                          style={{
+                            border: "1px solid #bfdbfe",
+                            borderRadius: 16,
+                            padding: 18,
+                            background: "#eff6ff",
+                            boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                          }}
                         >
-                          {item.news.title}
-                        </a>
-                      </div>
-
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "#64748b",
-                          lineHeight: 1.7,
-                          marginBottom: 8,
-                        }}
-                      >
-                        작성일: {formatDate(item.news.createdAt)}
-                        <br />
-                        소스 키워드: {item.news.sourceQuery || "-"}
-                      </div>
-
-                      <div
-                        style={{
-                          fontSize: 14,
-                          color: "#334155",
-                          lineHeight: 1.8,
-                          marginBottom: 8,
-                        }}
-                      >
-                        {item.news.summary || item.news.snippet || "-"}
-                      </div>
-
-                      {item.news.snippet ? (
-                        <details>
-                          <summary
-                            style={{
-                              cursor: "pointer",
-                              color: "#2563eb",
-                              fontWeight: 700,
-                              fontSize: 13,
-                            }}
-                          >
-                            원문 스니펫 보기
-                          </summary>
                           <div
                             style={{
-                              marginTop: 8,
-                              fontSize: 13,
-                              color: "#475569",
-                              lineHeight: 1.8,
+                              display: "inline-block",
+                              marginBottom: 10,
+                              fontSize: 12,
+                              fontWeight: 800,
+                              color: "#fff",
+                              background: "#2563eb",
+                              borderRadius: 999,
+                              padding: "4px 10px",
                             }}
                           >
-                            {item.news.snippet}
+                            TOP {item.rankOrder}
                           </div>
-                        </details>
-                      ) : null}
+
+                          <div
+                            style={{
+                              fontSize: 17,
+                              fontWeight: 800,
+                              color: "#111827",
+                              lineHeight: 1.6,
+                              marginBottom: 8,
+                            }}
+                          >
+                            <a
+                              href={item.news.link}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: "#111827", textDecoration: "none" }}
+                            >
+                              {item.news.title}
+                            </a>
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: "#64748b",
+                              lineHeight: 1.7,
+                              marginBottom: 10,
+                            }}
+                          >
+                            작성일: {formatDate(item.news.createdAt)}
+                            <br />
+                            소스 키워드: {item.news.sourceQuery || "-"}
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize: 14,
+                              color: "#334155",
+                              lineHeight: 1.9,
+                            }}
+                          >
+                            {item.news.summary || item.news.snippet || "-"}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ) : null}
+
+                {normalItems.length > 0 ? (
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 800,
+                        color: "#475569",
+                        marginBottom: 12,
+                      }}
+                    >
+                      그 외 기사
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {normalItems.map((item) => (
+                        <div
+                          key={item.id}
+                          style={{
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 14,
+                            padding: 14,
+                            background: "#ffffff",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 800,
+                              color: "#64748b",
+                              marginBottom: 8,
+                            }}
+                          >
+                            기사 {item.rankOrder}
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize: 15,
+                              fontWeight: 700,
+                              color: "#111827",
+                              lineHeight: 1.6,
+                              marginBottom: 6,
+                            }}
+                          >
+                            <a
+                              href={item.news.link}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: "#111827", textDecoration: "none" }}
+                            >
+                              {item.news.title}
+                            </a>
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: "#64748b",
+                              lineHeight: 1.7,
+                            }}
+                          >
+                            소스 키워드: {item.news.sourceQuery || "-"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </>
             ) : null}
           </section>

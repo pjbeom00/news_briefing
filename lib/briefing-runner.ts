@@ -1,6 +1,8 @@
 // (2026-04-01) lib/briefing-runner.ts
 // (2026-04-02) 중복 기사 제거 + 구조화된 Gemini 브리핑 + 메일 품질 개선
 
+// lib/briefing-runner.ts
+
 import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/prisma";
 import { sendMail } from "@/lib/gmail";
@@ -274,32 +276,35 @@ function buildMailHtml(input: {
     createdAt: Date;
   }>;
 }) {
+  const topItems = input.items.slice(0, 3);
+  const otherItems = input.items.slice(3);
+
   const keyPointsHtml = input.structured.keyPoints
     .map(
       (point) => `
-        <li style="margin-bottom:8px;line-height:1.7;color:#1f2937;">
+        <li style="margin-bottom:10px;line-height:1.8;color:#1f2937;">
           ${escapeHtml(point)}
         </li>
       `
     )
     .join("");
 
-  const itemsHtml = input.items
+  const topItemsHtml = topItems
     .map(
       (item) => `
-        <div style="background:#ffffff;border:1px solid #dbeafe;border-radius:12px;padding:16px;margin-bottom:14px;">
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:16px;padding:18px;margin-bottom:14px;">
           <div style="display:inline-block;background:#2563eb;color:#ffffff;font-size:12px;font-weight:700;border-radius:999px;padding:4px 10px;margin-bottom:10px;">
             TOP ${item.rank}
           </div>
-          <div style="font-size:16px;font-weight:700;color:#111827;line-height:1.5;margin-bottom:8px;">
+          <div style="font-size:17px;font-weight:800;color:#111827;line-height:1.6;margin-bottom:8px;">
             <a href="${escapeHtml(item.link)}" target="_blank" style="color:#111827;text-decoration:none;">
               ${escapeHtml(item.title)}
             </a>
           </div>
-          <div style="font-size:12px;color:#6b7280;margin-bottom:8px;">
+          <div style="font-size:12px;color:#64748b;margin-bottom:8px;line-height:1.7;">
             ${item.createdAt.toUTCString()}${item.sourceQuery ? ` · ${escapeHtml(item.sourceQuery)}` : ""}
           </div>
-          <div style="font-size:14px;line-height:1.7;color:#374151;">
+          <div style="font-size:14px;line-height:1.9;color:#334155;">
             ${escapeHtml(item.summary)}
           </div>
         </div>
@@ -307,11 +312,11 @@ function buildMailHtml(input: {
     )
     .join("");
 
-  const fullListHtml = input.items
+  const otherItemsHtml = otherItems
     .map(
-      (item, index) => `
-        <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:10px;">
-          <div style="font-size:13px;color:#6b7280;margin-bottom:6px;">기사 ${index + 1}</div>
+      (item) => `
+        <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:14px 16px;margin-bottom:10px;">
+          <div style="font-size:13px;color:#64748b;font-weight:700;margin-bottom:6px;">기사 ${item.rank}</div>
           <div style="font-size:14px;font-weight:700;line-height:1.6;color:#111827;">
             <a href="${escapeHtml(item.link)}" target="_blank" style="color:#111827;text-decoration:none;">
               ${escapeHtml(item.title)}
@@ -326,7 +331,7 @@ function buildMailHtml(input: {
     <div style="background:#f3f4f6;padding:24px;font-family:Arial,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;">
       <table width="100%" cellpadding="0" cellspacing="0" style="max-width:760px;margin:0 auto;">
         <tr>
-          <td style="background:#0f172a;border-radius:16px;padding:24px 24px 20px 24px;">
+          <td style="background:#0f172a;border-radius:18px;padding:26px 24px 22px 24px;">
             <div style="font-size:28px;font-weight:800;color:#ffffff;margin-bottom:8px;">CJ대한통운 브리핑</div>
             <div style="font-size:12px;color:#cbd5e1;">${escapeHtml(input.scheduledDateLabel)} 오전 브리핑</div>
           </td>
@@ -335,9 +340,9 @@ function buildMailHtml(input: {
         <tr><td style="height:16px;"></td></tr>
 
         <tr>
-          <td style="background:#e0f2fe;border:1px solid #7dd3fc;border-radius:14px;padding:18px 20px;">
+          <td style="background:#e0f2fe;border:1px solid #7dd3fc;border-radius:16px;padding:18px 20px;">
             <div style="font-size:16px;font-weight:800;color:#0f172a;margin-bottom:12px;">오늘의 핵심 동향</div>
-            <div style="font-size:14px;line-height:1.8;color:#1f2937;">
+            <div style="font-size:15px;line-height:1.9;color:#1f2937;">
               ${escapeHtml(input.structured.trend)}
             </div>
           </td>
@@ -346,8 +351,8 @@ function buildMailHtml(input: {
         <tr><td style="height:14px;"></td></tr>
 
         <tr>
-          <td style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:18px 20px;">
-            <div style="font-size:16px;font-weight:800;color:#111827;margin-bottom:12px;">기사별 핵심 포인트</div>
+          <td style="background:#ffffff;border:1px solid #dbeafe;border-radius:16px;padding:18px 20px;">
+            <div style="font-size:16px;font-weight:800;color:#2563eb;margin-bottom:12px;">핵심 포인트</div>
             <ul style="padding-left:20px;margin:0;">
               ${keyPointsHtml}
             </ul>
@@ -357,22 +362,27 @@ function buildMailHtml(input: {
         <tr><td style="height:14px;"></td></tr>
 
         <tr>
-          <td style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:18px 20px;">
-            <div style="font-size:16px;font-weight:800;color:#111827;margin-bottom:12px;">기업 관점 요약</div>
-            <div style="font-size:14px;line-height:1.8;color:#1f2937;">
-              ${escapeHtml(input.structured.companyInsight)}
-            </div>
-          </td>
-        </tr>
-
-        <tr><td style="height:14px;"></td></tr>
-
-        <tr>
-          <td style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:18px 20px;">
-            <div style="font-size:16px;font-weight:800;color:#111827;margin-bottom:12px;">마지막 코멘트</div>
-            <div style="font-size:14px;line-height:1.8;color:#1f2937;">
-              ${escapeHtml(input.structured.comment)}
-            </div>
+          <td>
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td width="50%" valign="top" style="padding-right:7px;">
+                  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:18px 20px;height:100%;">
+                    <div style="font-size:16px;font-weight:800;color:#0f172a;margin-bottom:12px;">기업 관점</div>
+                    <div style="font-size:14px;line-height:1.9;color:#334155;">
+                      ${escapeHtml(input.structured.companyInsight)}
+                    </div>
+                  </div>
+                </td>
+                <td width="50%" valign="top" style="padding-left:7px;">
+                  <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:16px;padding:18px 20px;height:100%;">
+                    <div style="font-size:16px;font-weight:800;color:#9a3412;margin-bottom:12px;">마지막 코멘트</div>
+                    <div style="font-size:14px;line-height:1.9;color:#7c2d12;">
+                      ${escapeHtml(input.structured.comment)}
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </table>
           </td>
         </tr>
 
@@ -380,19 +390,25 @@ function buildMailHtml(input: {
 
         <tr>
           <td>
-            <div style="font-size:20px;font-weight:800;color:#111827;margin-bottom:14px;">오늘의 핵심 기사 TOP ${input.items.length}</div>
-            ${itemsHtml}
+            <div style="font-size:20px;font-weight:800;color:#111827;margin-bottom:14px;">상위 3개 핵심 기사</div>
+            ${topItemsHtml}
           </td>
         </tr>
 
-        <tr><td style="height:12px;"></td></tr>
+        ${
+          otherItems.length > 0
+            ? `
+        <tr><td style="height:8px;"></td></tr>
 
         <tr>
           <td>
-            <div style="font-size:18px;font-weight:800;color:#111827;margin-bottom:14px;">전체 기사 목록</div>
-            ${fullListHtml}
+            <div style="font-size:18px;font-weight:800;color:#475569;margin-bottom:12px;">그 외 기사</div>
+            ${otherItemsHtml}
           </td>
         </tr>
+        `
+            : ""
+        }
       </table>
     </div>
   `;
