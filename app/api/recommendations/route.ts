@@ -122,8 +122,8 @@ function buildRuleBasedRecommendations(input: {
     keyword,
     reason:
       index < 2
-        ? "최근 저장/검색 이력에 자주 등장한 키워드입니다."
-        : "최근 브리핑 및 기사 제목 흐름을 바탕으로 추천한 키워드입니다.",
+        ? "최근 검색에 자주 등장한 키워드"
+        : "최근 브리핑 흐름 바탕 下 추천 키워드",
   }));
 }
 
