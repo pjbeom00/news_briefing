@@ -1,7 +1,7 @@
 // app/page.tsx - 메인 페이지, 뉴스 30개 검색 후 최종 선정 기사 10개만 화면에 보이도록 정리
 // (2026-03-27) : UI 업그레이드, AI 추천 기능 추가
 // (2026-03-30) : 검색 결과에 점수 정보 포함, 상위 20개 --> Gemini 재선별
-// (2026-04-02) : app/page.tsx : 메뉴 재구성
+// (2026-04-02) : app/page.tsx : 메뉴 재구성 및 반응형 3단 레이아웃 적용
 
 "use client";
 
@@ -741,752 +741,385 @@ export default function NewsPage() {
   };
 
   return (
-    <main
-      style={{
-        maxWidth: "1400px",
-        margin: "0 auto",
-        padding: "24px 20px 40px",
-        fontFamily: "Arial, sans-serif",
-      }}
-    >
-      <h1 style={{ marginBottom: "8px" }}>뉴스 브리핑</h1>
-      <p style={{ marginTop: 0, color: "#475569" }}>
-        3단계 랭킹 알고리즘(TF-IDF + 중복 제거 + 중요도 scoring)까지 반영된 최종본입니다.
-      </p>
+    <>
+      <style>{`
+        .news-grid {
+          display: grid;
+          grid-template-columns: 280px minmax(0, 1fr) 360px;
+          gap: 20px;
+          align-items: start;
+        }
 
-      <div
+        .news-sticky {
+          position: sticky;
+          top: 16px;
+        }
+
+        .search-actions {
+          display: flex;
+          gap: 12px;
+          margin-top: 8px;
+          flex-wrap: wrap;
+        }
+
+        @media (max-width: 1280px) {
+          .news-grid {
+            grid-template-columns: 260px minmax(0, 1fr);
+          }
+
+          .news-right {
+            grid-column: 1 / -1;
+          }
+
+          .news-sticky {
+            position: static;
+          }
+        }
+
+        @media (max-width: 920px) {
+          .news-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .news-left,
+          .news-center,
+          .news-right {
+            grid-column: auto;
+          }
+
+          .news-sticky {
+            position: static;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .search-actions {
+            flex-direction: column;
+          }
+
+          .search-actions button {
+            width: 100%;
+          }
+
+          .news-page {
+            padding: 18px 14px 32px !important;
+          }
+
+          .news-panel {
+            padding: 16px !important;
+            border-radius: 14px !important;
+          }
+
+          .news-history-card {
+            padding: 10px !important;
+          }
+
+          .news-title {
+            font-size: 28px !important;
+          }
+        }
+      `}</style>
+
+      <main
+        className="news-page"
         style={{
-          display: "grid",
-          gridTemplateColumns: "280px 1fr 360px",
-          gap: "20px",
-          alignItems: "start",
+          maxWidth: "1400px",
+          margin: "0 auto",
+          padding: "24px 20px 40px",
+          fontFamily: "Arial, sans-serif",
+          boxSizing: "border-box",
         }}
       >
-        <aside
-          style={{
-            border: "1px solid #e5e7eb",
-            borderRadius: "16px",
-            padding: "16px",
-            background: "#fff",
-            position: "sticky",
-            top: "16px",
-          }}
-        >
-          <h3 style={{ marginTop: 0 }}>카테고리</h3>
+        <h1 className="news-title" style={{ marginBottom: "8px" }}>
+          뉴스 브리핑
+        </h1>
+        <p style={{ marginTop: 0, color: "#475569", lineHeight: 1.7 }}>
+          3단계 랭킹 알고리즘(TF-IDF + 중복 제거 + 중요도 scoring)까지 반영된 최종본입니다.
+        </p>
 
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "10px",
-              borderRadius: "8px",
-              border: "1px solid #d1d5db",
-              marginBottom: "16px",
-            }}
-          >
-            {CATEGORY_OPTIONS.map((category) => (
-              <option key={category} value={category}>
-                {category}
-              </option>
-            ))}
-          </select>
-
-          <div
-            style={{
-              display: "flex",
-              gap: "8px",
-              marginBottom: "16px",
-              alignItems: "center",
-            }}
-          >
-            <button
-              onClick={handleClassifyUncategorized}
-              disabled={classifying || uncategorizedCount === 0}
-              style={{
-                flex: 1,
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                background: "#7c3aed",
-                color: "#fff",
-                cursor: "pointer",
-                fontSize: "13px",
-              }}
-            >
-              {classifying ? "분류 중..." : "미분류 자동 분류"}
-            </button>
-            <span style={{ fontSize: "12px", color: "#64748b" }}>
-              {uncategorizedCount}건
-            </span>
-          </div>
-
-          <h3>추천 키워드</h3>
-
-          <div style={{ marginBottom: "12px" }}>
-            <button
-              onClick={loadRecommendations}
-              disabled={recommendationLoading}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                background: "#2563eb",
-                color: "#fff",
-                cursor: "pointer",
-                fontSize: "13px",
-              }}
-            >
-              {recommendationLoading ? "추천 생성 중..." : "추천 키워드 새로고침"}
-            </button>
-          </div>
-
-          {recommendationSource && (
-            <div
-              style={{
-                marginBottom: "12px",
-                fontSize: "12px",
-                color: "#64748b",
-              }}
-            >
-              추천 방식: {recommendationSource === "AI" ? "AI" : "규칙 기반"}
-            </div>
-          )}
-
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-              marginBottom: "20px",
-            }}
-          >
-            {recommendations.length === 0 && (
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "10px",
-                  background: "#f8fafc",
-                  color: "#64748b",
-                  fontSize: "13px",
-                }}
-              >
-                추천 키워드가 없습니다.
-              </div>
-            )}
-
-            {recommendations.map((item, index) => (
-              <div
-                key={`${item.keyword}-${index}`}
-                style={{
-                  border: "1px solid #dbeafe",
-                  borderRadius: "12px",
-                  padding: "10px 12px",
-                  background: "#f8fbff",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: "8px",
-                    marginBottom: "6px",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontWeight: 700,
-                      fontSize: "13px",
-                      color: "#0f172a",
-                      lineHeight: 1.3,
-                    }}
-                  >
-                    {item.keyword}
-                  </div>
-
-                  <button
-                    onClick={() => handleApplyRecommendation(item)}
-                    style={{
-                      padding: "5px 10px",
-                      borderRadius: "8px",
-                      border: "none",
-                      background: "#111827",
-                      color: "#fff",
-                      cursor: "pointer",
-                      fontSize: "12px",
-                      flexShrink: 0,
-                    }}
-                  >
-                    적용
-                  </button>
-                </div>
-
-                <div
-                  style={{
-                    fontSize: "12px",
-                    color: "#475569",
-                    lineHeight: 1.45,
-                    wordBreak: "keep-all",
-                  }}
-                >
-                  {item.reason}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <h3>저장 키워드</h3>
-
-          {filteredSavedQueries.length === 0 && (
-            <div
-              style={{
-                padding: "12px",
-                borderRadius: "10px",
-                background: "#f8fafc",
-                color: "#64748b",
-                fontSize: "14px",
-              }}
-            >
-              저장된 키워드가 없습니다.
-            </div>
-          )}
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            {filteredSavedQueries.map((item) => (
-              <div
-                key={item.id}
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "12px",
-                  padding: "12px",
-                  background: "#fafafa",
-                }}
-              >
-                <div
-                  style={{
-                    fontWeight: 700,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "8px",
-                  }}
-                >
-                  <span>{item.name}</span>
-                  <span style={{ fontSize: "12px", color: "#64748b" }}>
-                    {item.isFavorite ? "★" : "☆"}
-                  </span>
-                </div>
-
-                <div
-                  style={{
-                    marginTop: "6px",
-                    fontSize: "13px",
-                    color: "#475569",
-                    lineHeight: 1.5,
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {item.query}
-                </div>
-
-                <div style={{ marginTop: "10px" }}>
-                  <select
-                    value={item.category || "기타"}
-                    onChange={(e) =>
-                      handleUpdateSavedQueryCategory(item, e.target.value)
-                    }
-                    disabled={updatingSavedQueryId === item.id}
-                    style={{
-                      width: "100%",
-                      padding: "8px 10px",
-                      borderRadius: "8px",
-                      border: "1px solid #d1d5db",
-                      fontSize: "12px",
-                    }}
-                  >
-                    {CATEGORY_OPTIONS.filter((x) => x !== "전체").map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "6px",
-                    marginTop: "10px",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <button
-                    onClick={() => handleApplySavedQuery(item)}
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: "8px",
-                      border: "none",
-                      background: "#111827",
-                      color: "#fff",
-                      cursor: "pointer",
-                      fontSize: "12px",
-                    }}
-                  >
-                    불러오기
-                  </button>
-                  <button
-                    onClick={() => handleToggleFavorite(item)}
-                    disabled={updatingSavedQueryId === item.id}
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: "8px",
-                      border: "1px solid #d1d5db",
-                      background: "#fff",
-                      cursor: "pointer",
-                      fontSize: "12px",
-                    }}
-                  >
-                    {updatingSavedQueryId === item.id
-                      ? "처리 중..."
-                      : item.isFavorite
-                      ? "즐겨찾기 해제"
-                      : "즐겨찾기"}
-                  </button>
-                  <button
-                    onClick={() => handleDeleteSavedQuery(item.id)}
-                    disabled={updatingSavedQueryId === item.id}
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: "8px",
-                      border: "1px solid #fecaca",
-                      background: "#fff5f5",
-                      color: "#b91c1c",
-                      cursor: "pointer",
-                      fontSize: "12px",
-                    }}
-                  >
-                    {updatingSavedQueryId === item.id ? "삭제 중..." : "삭제"}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </aside>
-
-        <section>
-          <div
+        <div className="news-grid">
+          <aside
+            className="news-left news-sticky news-panel"
             style={{
               border: "1px solid #e5e7eb",
               borderRadius: "16px",
-              padding: "20px",
+              padding: "16px",
               background: "#fff",
+              minWidth: 0,
             }}
           >
-            <div style={{ marginBottom: "12px" }}>
-              <textarea
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={handleQueryKeyDown}
-                placeholder={`예: CJ대한통운 / HBM / OpenAI API pricing / 중동 정세 반도체 공급망 / 박재범 /
-Enter: 검색 / Shift+Enter: 줄바꿈`}
-                rows={4}
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  border: "1px solid #ccc",
-                  resize: "vertical",
-                  boxSizing: "border-box",
-                }}
-              />
-            </div>
+            <h3 style={{ marginTop: 0 }}>카테고리</h3>
+
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px",
+                borderRadius: "8px",
+                border: "1px solid #d1d5db",
+                marginBottom: "16px",
+                boxSizing: "border-box",
+              }}
+            >
+              {CATEGORY_OPTIONS.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
 
             <div
               style={{
                 display: "flex",
-                gap: "12px",
-                marginTop: "8px",
-                flexWrap: "wrap",
+                gap: "8px",
+                marginBottom: "16px",
+                alignItems: "center",
               }}
             >
               <button
-                onClick={handleSearch}
-                disabled={loading || !query.trim()}
+                onClick={handleClassifyUncategorized}
+                disabled={classifying || uncategorizedCount === 0}
                 style={{
-                  padding: "12px 18px",
+                  flex: 1,
+                  padding: "10px 12px",
                   borderRadius: "8px",
                   border: "none",
-                  background: "#111",
+                  background: "#7c3aed",
                   color: "#fff",
                   cursor: "pointer",
+                  fontSize: "13px",
                 }}
               >
-                {loading ? "검색 중..." : "기사 검색"}
+                {classifying ? "분류 중..." : "미분류 자동 분류"}
               </button>
+              <span style={{ fontSize: "12px", color: "#64748b", whiteSpace: "nowrap" }}>
+                {uncategorizedCount}건
+              </span>
+            </div>
 
+            <h3>추천 키워드</h3>
+
+            <div style={{ marginBottom: "12px" }}>
               <button
-                onClick={handleSummarize}
-                disabled={summarizing || !selectedItems.length}
+                onClick={loadRecommendations}
+                disabled={recommendationLoading}
                 style={{
-                  padding: "12px 18px",
+                  width: "100%",
+                  padding: "10px 12px",
                   borderRadius: "8px",
                   border: "none",
                   background: "#2563eb",
                   color: "#fff",
                   cursor: "pointer",
+                  fontSize: "13px",
                 }}
               >
-                {summarizing ? "요약 중..." : "Gemini 요약"}
-              </button>
-
-              <button
-                onClick={handleSaveQuery}
-                disabled={savingQuery || !query.trim()}
-                style={{
-                  padding: "12px 18px",
-                  borderRadius: "8px",
-                  border: "none",
-                  background: "#0f766e",
-                  color: "#fff",
-                  cursor: "pointer",
-                }}
-              >
-                {savingQuery ? "저장 중..." : "키워드 저장"}
+                {recommendationLoading ? "추천 생성 중..." : "추천 키워드 새로고침"}
               </button>
             </div>
+
+            {recommendationSource && (
+              <div
+                style={{
+                  marginBottom: "12px",
+                  fontSize: "12px",
+                  color: "#64748b",
+                }}
+              >
+                추천 방식: {recommendationSource === "AI" ? "AI" : "규칙 기반"}
+              </div>
+            )}
 
             <div
               style={{
                 display: "flex",
-                gap: "12px",
-                marginTop: "16px",
-                alignItems: "center",
+                flexDirection: "column",
+                gap: "8px",
+                marginBottom: "20px",
               }}
             >
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="받을 이메일 주소"
-                style={{
-                  flex: 1,
-                  padding: "12px",
-                  borderRadius: "8px",
-                  border: "1px solid #ccc",
-                }}
-              />
-
-              <button
-                onClick={handleSendMail}
-                disabled={sending || !summary || !selectedItems.length || !email}
-                style={{
-                  padding: "12px 18px",
-                  borderRadius: "8px",
-                  border: "none",
-                  background: "#16a34a",
-                  color: "#fff",
-                  cursor: "pointer",
-                }}
-              >
-                {sending ? "보내는 중..." : "메일 보내기"}
-              </button>
-            </div>
-          </div>
-
-          {error && (
-            <pre
-              style={{
-                color: "red",
-                marginTop: "20px",
-                whiteSpace: "pre-wrap",
-                background: "#fff5f5",
-                padding: "12px",
-                borderRadius: "8px",
-                border: "1px solid #fecaca",
-              }}
-            >
-              {error}
-            </pre>
-          )}
-
-          {notice && (
-            <div
-              style={{
-                marginTop: "20px",
-                whiteSpace: "pre-wrap",
-                background: "#fffbea",
-                color: "#92400e",
-                padding: "12px",
-                borderRadius: "8px",
-                border: "1px solid #fde68a",
-              }}
-            >
-              {notice}
-            </div>
-          )}
-
-          {!!briefingId && (
-            <div
-              style={{
-                marginTop: "20px",
-                background: "#f0fdf4",
-                color: "#166534",
-                padding: "12px",
-                borderRadius: "8px",
-                border: "1px solid #bbf7d0",
-              }}
-            >
-              브리핑 저장 완료 (ID: {briefingId})
-            </div>
-          )}
-
-          {!!rawItems.length && (
-            <div
-              style={{
-                marginTop: "24px",
-                padding: "12px 16px",
-                borderRadius: "10px",
-                background: "#f8fafc",
-                border: "1px solid #e2e8f0",
-                color: "#334155",
-                fontSize: "14px",
-              }}
-            >
-              전체 수집 기사 수: <strong>{rawItems.length}</strong>개
-              {" / "}
-              알고리즘 상위 후보 수: <strong>{preRankedItems.length}</strong>개
-              {" / "}
-              최종 선정 기사 수: <strong>{selectedItems.length}</strong>개
-              {reranking && (
-                <span style={{ marginLeft: "10px", color: "#2563eb" }}>
-                  · Gemini 재선별 중...
-                </span>
+              {recommendations.length === 0 && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    background: "#f8fafc",
+                    color: "#64748b",
+                    fontSize: "13px",
+                  }}
+                >
+                  추천 키워드가 없습니다.
+                </div>
               )}
+
+              {recommendations.map((item, index) => (
+                <div
+                  key={`${item.keyword}-${index}`}
+                  style={{
+                    border: "1px solid #dbeafe",
+                    borderRadius: "12px",
+                    padding: "10px 12px",
+                    background: "#f8fbff",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "8px",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: "13px",
+                        color: "#0f172a",
+                        lineHeight: 1.3,
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {item.keyword}
+                    </div>
+
+                    <button
+                      onClick={() => handleApplyRecommendation(item)}
+                      style={{
+                        padding: "5px 10px",
+                        borderRadius: "8px",
+                        border: "none",
+                        background: "#111827",
+                        color: "#fff",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                        flexShrink: 0,
+                      }}
+                    >
+                      적용
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: "#475569",
+                      lineHeight: 1.45,
+                      wordBreak: "keep-all",
+                    }}
+                  >
+                    {item.reason}
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
 
-          {!!summary && (
-            <div
-              style={{
-                marginTop: "24px",
-                padding: "16px",
-                border: "1px solid #dbeafe",
-                background: "#eff6ff",
-                borderRadius: "12px",
-              }}
-            >
-              <h2 style={{ marginTop: 0 }}>Gemini 요약</h2>
-              <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>{summary}</pre>
-            </div>
-          )}
+            <h3>저장 키워드</h3>
 
-          <div style={{ marginTop: "24px" }}>
-            <h2 style={{ marginBottom: "16px" }}>최종 선정 기사 10개</h2>
-
-            {selectedItems.length === 0 && (
+            {filteredSavedQueries.length === 0 && (
               <div
                 style={{
-                  padding: "16px",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "12px",
-                  background: "#fff",
-                  color: "#6b7280",
+                  padding: "12px",
+                  borderRadius: "10px",
+                  background: "#f8fafc",
+                  color: "#64748b",
+                  fontSize: "14px",
                 }}
               >
-                아직 선정된 기사가 없습니다.
+                저장된 키워드가 없습니다.
               </div>
             )}
 
-            {selectedItems.map((item, index) => (
-              <div
-                key={`${item.link}-${index}`}
-                style={{
-                  padding: "16px",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "12px",
-                  marginBottom: "16px",
-                  background: index < 3 ? "#f8fbff" : "#fff",
-                }}
-              >
-                <div
-                  style={{
-                    display: "inline-block",
-                    padding: "4px 10px",
-                    borderRadius: "999px",
-                    background: index < 3 ? "#2563eb" : "#e5e7eb",
-                    color: index < 3 ? "#fff" : "#111827",
-                    fontSize: "12px",
-                    fontWeight: 700,
-                    marginBottom: "10px",
-                  }}
-                >
-                  {index < 3 ? `TOP ${index + 1}` : `선정 ${index + 1}`}
-                </div>
-
-                <h3 style={{ marginTop: 0, marginBottom: "8px" }}>
-                  <a href={item.link} target="_blank" rel="noreferrer">
-                    {item.title}
-                  </a>
-                </h3>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "8px",
-                    flexWrap: "wrap",
-                    marginBottom: "8px",
-                    fontSize: "12px",
-                    color: "#64748b",
-                  }}
-                >
-                  <span>{item.pubDate}</span>
-                  {item.sourceDomain && <span>· {item.sourceDomain}</span>}
-                  {typeof item.finalScore === "number" && (
-                    <span>· 점수 {item.finalScore.toFixed(2)}</span>
-                  )}
-                </div>
-
-                {(typeof item.keywordScore === "number" ||
-                  typeof item.tfidfScore === "number" ||
-                  typeof item.freshnessScore === "number" ||
-                  typeof item.importanceScore === "number") && (
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "8px",
-                      flexWrap: "wrap",
-                      marginBottom: "10px",
-                      fontSize: "12px",
-                      color: "#475569",
-                    }}
-                  >
-                    {typeof item.keywordScore === "number" && (
-                      <span>키워드 {item.keywordScore.toFixed(1)}</span>
-                    )}
-                    {typeof item.tfidfScore === "number" && (
-                      <span>TF-IDF {item.tfidfScore.toFixed(1)}</span>
-                    )}
-                    {typeof item.freshnessScore === "number" && (
-                      <span>최신성 {item.freshnessScore.toFixed(1)}</span>
-                    )}
-                    {typeof item.importanceScore === "number" && (
-                      <span>중요도 {item.importanceScore.toFixed(1)}</span>
-                    )}
-                    {typeof item.diversityPenalty === "number" &&
-                      item.diversityPenalty > 0 && (
-                        <span>다양성 패널티 -{item.diversityPenalty.toFixed(1)}</span>
-                      )}
-                  </div>
-                )}
-
-                {item.snippet && <p style={{ margin: 0 }}>{item.snippet}</p>}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <aside
-          style={{
-            border: "1px solid #e5e7eb",
-            borderRadius: "16px",
-            padding: "16px",
-            background: "#fff",
-            position: "sticky",
-            top: "16px",
-            maxHeight: "calc(100vh - 32px)",
-            overflow: "auto",
-          }}
-        >
-          <h3 style={{ marginTop: 0 }}>브리핑 히스토리</h3>
-
-          {historyLoading && (
-            <div
-              style={{
-                padding: "12px",
-                borderRadius: "10px",
-                background: "#f8fafc",
-                color: "#64748b",
-                fontSize: "14px",
-              }}
-            >
-              히스토리 불러오는 중...
-            </div>
-          )}
-
-          {!historyLoading && briefings.length === 0 && (
-            <div
-              style={{
-                padding: "12px",
-                borderRadius: "10px",
-                background: "#f8fafc",
-                color: "#64748b",
-                fontSize: "14px",
-              }}
-            >
-              저장된 브리핑이 없습니다.
-            </div>
-          )}
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            {briefings.map((item) => {
-              const isSelected = selectedBriefingId === item.id;
-
-              return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {filteredSavedQueries.map((item) => (
                 <div
                   key={item.id}
                   style={{
-                    border: isSelected ? "2px solid #2563eb" : "1px solid #e5e7eb",
+                    border: "1px solid #e5e7eb",
                     borderRadius: "12px",
                     padding: "12px",
-                    background: isSelected ? "#eff6ff" : "#fafafa",
+                    background: "#fafafa",
                   }}
                 >
-                  <button
-                    onClick={() => loadBriefingDetail(item.id)}
+                  <div
                     style={{
-                      width: "100%",
-                      textAlign: "left",
-                      border: "none",
-                      background: "transparent",
-                      cursor: "pointer",
-                      padding: 0,
+                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "8px",
                     }}
                   >
-                    <div style={{ fontWeight: 700 }}>{item.query}</div>
-                    <div style={{ marginTop: "4px", fontSize: "12px", color: "#64748b" }}>
-                      {item.categoryTag || "미분류"} ·{" "}
-                      {new Date(item.createdAt).toLocaleString("ko-KR")}
-                    </div>
-                    <div
+                    <span>{item.name}</span>
+                    <span style={{ fontSize: "12px", color: "#64748b" }}>
+                      {item.isFavorite ? "★" : "☆"}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: "6px",
+                      fontSize: "13px",
+                      color: "#475569",
+                      lineHeight: 1.5,
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {item.query}
+                  </div>
+
+                  <div style={{ marginTop: "10px" }}>
+                    <select
+                      value={item.category || "기타"}
+                      onChange={(e) =>
+                        handleUpdateSavedQueryCategory(item, e.target.value)
+                      }
+                      disabled={updatingSavedQueryId === item.id}
                       style={{
-                        marginTop: "8px",
-                        fontSize: "13px",
-                        color: "#334155",
-                        lineHeight: 1.5,
-                        overflow: "hidden",
-                        display: "-webkit-box",
-                        WebkitLineClamp: 3,
-                        WebkitBoxOrient: "vertical",
+                        width: "100%",
+                        padding: "8px 10px",
+                        borderRadius: "8px",
+                        border: "1px solid #d1d5db",
+                        fontSize: "12px",
+                        boxSizing: "border-box",
                       }}
                     >
-                      {item.summary}
-                    </div>
-                  </button>
+                      {CATEGORY_OPTIONS.filter((x) => x !== "전체").map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
                   <div
                     style={{
                       display: "flex",
-                      gap: "8px",
+                      gap: "6px",
                       marginTop: "10px",
+                      flexWrap: "wrap",
                     }}
                   >
                     <button
-                      onClick={() => loadBriefingDetail(item.id)}
+                      onClick={() => handleApplySavedQuery(item)}
                       style={{
-                        flex: 1,
-                        padding: "8px 10px",
+                        padding: "6px 10px",
+                        borderRadius: "8px",
+                        border: "none",
+                        background: "#111827",
+                        color: "#fff",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                      }}
+                    >
+                      불러오기
+                    </button>
+                    <button
+                      onClick={() => handleToggleFavorite(item)}
+                      disabled={updatingSavedQueryId === item.id}
+                      style={{
+                        padding: "6px 10px",
                         borderRadius: "8px",
                         border: "1px solid #d1d5db",
                         background: "#fff",
@@ -1494,13 +1127,17 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
                         fontSize: "12px",
                       }}
                     >
-                      {isSelected ? "선택됨" : "선택"}
+                      {updatingSavedQueryId === item.id
+                        ? "처리 중..."
+                        : item.isFavorite
+                        ? "즐겨찾기 해제"
+                        : "즐겨찾기"}
                     </button>
                     <button
-                      onClick={() => handleDeleteBriefing(item.id)}
-                      disabled={deletingBriefingId === item.id}
+                      onClick={() => handleDeleteSavedQuery(item.id)}
+                      disabled={updatingSavedQueryId === item.id}
                       style={{
-                        padding: "8px 10px",
+                        padding: "6px 10px",
                         borderRadius: "8px",
                         border: "1px solid #fecaca",
                         background: "#fff5f5",
@@ -1509,90 +1146,550 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
                         fontSize: "12px",
                       }}
                     >
-                      {deletingBriefingId === item.id ? "삭제 중..." : "삭제"}
+                      {updatingSavedQueryId === item.id ? "삭제 중..." : "삭제"}
                     </button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          </aside>
 
-          {selectedBriefing && (
+          <section className="news-center" style={{ minWidth: 0 }}>
             <div
+              className="news-panel"
               style={{
-                marginTop: "20px",
-                paddingTop: "16px",
-                borderTop: "1px solid #e5e7eb",
+                border: "1px solid #e5e7eb",
+                borderRadius: "16px",
+                padding: "20px",
+                background: "#fff",
               }}
             >
-              <h3 style={{ marginTop: 0 }}>선택한 브리핑</h3>
-
-              <div style={{ fontWeight: 700 }}>{selectedBriefing.query}</div>
-
-              <div style={{ marginTop: "6px", fontSize: "12px", color: "#64748b" }}>
-                {selectedBriefing.categoryTag || "미분류"} ·{" "}
-                {new Date(selectedBriefing.createdAt).toLocaleString("ko-KR")}
+              <div style={{ marginBottom: "12px" }}>
+                <textarea
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={handleQueryKeyDown}
+                  placeholder={`예: CJ대한통운 / HBM / OpenAI API pricing / 중동 정세 반도체 공급망 / 박재범 /
+Enter: 검색 / Shift+Enter: 줄바꿈`}
+                  rows={4}
+                  style={{
+                    width: "100%",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    border: "1px solid #ccc",
+                    resize: "vertical",
+                    boxSizing: "border-box",
+                  }}
+                />
               </div>
 
-              {selectedBriefing.sentTo && (
-                <div style={{ marginTop: "6px", fontSize: "12px", color: "#166534" }}>
-                  발송됨: {selectedBriefing.sentTo}
-                </div>
-              )}
+              <div className="search-actions">
+                <button
+                  onClick={handleSearch}
+                  disabled={loading || !query.trim()}
+                  style={{
+                    padding: "12px 18px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: "#111",
+                    color: "#fff",
+                    cursor: "pointer",
+                  }}
+                >
+                  {loading ? "검색 중..." : "기사 검색"}
+                </button>
 
-              <pre
-                style={{
-                  whiteSpace: "pre-wrap",
-                  marginTop: "12px",
-                  fontSize: "13px",
-                  lineHeight: 1.5,
-                  background: "#f8fafc",
-                  padding: "10px",
-                  borderRadius: "10px",
-                }}
-              >
-                {selectedBriefing.summary}
-              </pre>
+                <button
+                  onClick={handleSummarize}
+                  disabled={summarizing || !selectedItems.length}
+                  style={{
+                    padding: "12px 18px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: "#2563eb",
+                    color: "#fff",
+                    cursor: "pointer",
+                  }}
+                >
+                  {summarizing ? "요약 중..." : "Gemini 요약"}
+                </button>
 
-              <div style={{ marginTop: "12px", fontWeight: 700 }}>기사 목록</div>
+                <button
+                  onClick={handleSaveQuery}
+                  disabled={savingQuery || !query.trim()}
+                  style={{
+                    padding: "12px 18px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: "#0f766e",
+                    color: "#fff",
+                    cursor: "pointer",
+                  }}
+                >
+                  {savingQuery ? "저장 중..." : "키워드 저장"}
+                </button>
+              </div>
 
               <div
                 style={{
                   display: "flex",
-                  flexDirection: "column",
-                  gap: "8px",
-                  marginTop: "8px",
+                  gap: "12px",
+                  marginTop: "16px",
+                  alignItems: "center",
+                  flexWrap: "wrap",
                 }}
               >
-                {(selectedBriefing.items || []).map((item) => (
-                  <a
-                    key={item.id}
-                    href={item.news.link}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      display: "block",
-                      padding: "10px",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: "10px",
-                      textDecoration: "none",
-                      color: "#111827",
-                      background: "#fff",
-                    }}
-                  >
-                    <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "4px" }}>
-                      {item.rankOrder}위
-                    </div>
-                    <div style={{ fontSize: "14px", fontWeight: 700 }}>
-                      {item.news.title}
-                    </div>
-                  </a>
-                ))}
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="받을 이메일 주소"
+                  style={{
+                    flex: 1,
+                    minWidth: "240px",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    border: "1px solid #ccc",
+                    boxSizing: "border-box",
+                  }}
+                />
+
+                <button
+                  onClick={handleSendMail}
+                  disabled={sending || !summary || !selectedItems.length || !email}
+                  style={{
+                    padding: "12px 18px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: "#16a34a",
+                    color: "#fff",
+                    cursor: "pointer",
+                  }}
+                >
+                  {sending ? "보내는 중..." : "메일 보내기"}
+                </button>
               </div>
             </div>
-          )}
-        </aside>
-      </div>
-    </main>
+
+            {error && (
+              <pre
+                style={{
+                  color: "red",
+                  marginTop: "20px",
+                  whiteSpace: "pre-wrap",
+                  background: "#fff5f5",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  border: "1px solid #fecaca",
+                }}
+              >
+                {error}
+              </pre>
+            )}
+
+            {notice && (
+              <div
+                style={{
+                  marginTop: "20px",
+                  whiteSpace: "pre-wrap",
+                  background: "#fffbea",
+                  color: "#92400e",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  border: "1px solid #fde68a",
+                }}
+              >
+                {notice}
+              </div>
+            )}
+
+            {!!briefingId && (
+              <div
+                style={{
+                  marginTop: "20px",
+                  background: "#f0fdf4",
+                  color: "#166534",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  border: "1px solid #bbf7d0",
+                }}
+              >
+                브리핑 저장 완료 (ID: {briefingId})
+              </div>
+            )}
+
+            {!!rawItems.length && (
+              <div
+                style={{
+                  marginTop: "24px",
+                  padding: "12px 16px",
+                  borderRadius: "10px",
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  color: "#334155",
+                  fontSize: "14px",
+                  lineHeight: 1.7,
+                }}
+              >
+                전체 수집 기사 수: <strong>{rawItems.length}</strong>개
+                {" / "}
+                알고리즘 상위 후보 수: <strong>{preRankedItems.length}</strong>개
+                {" / "}
+                최종 선정 기사 수: <strong>{selectedItems.length}</strong>개
+                {reranking && (
+                  <span style={{ marginLeft: "10px", color: "#2563eb" }}>
+                    · Gemini 재선별 중...
+                  </span>
+                )}
+              </div>
+            )}
+
+            {!!summary && (
+              <div
+                style={{
+                  marginTop: "24px",
+                  padding: "16px",
+                  border: "1px solid #dbeafe",
+                  background: "#eff6ff",
+                  borderRadius: "12px",
+                }}
+              >
+                <h2 style={{ marginTop: 0 }}>Gemini 요약</h2>
+                <pre style={{ whiteSpace: "pre-wrap", margin: 0, lineHeight: 1.7 }}>
+                  {summary}
+                </pre>
+              </div>
+            )}
+
+            <div style={{ marginTop: "24px" }}>
+              <h2 style={{ marginBottom: "16px" }}>최종 선정 기사 10개</h2>
+
+              {selectedItems.length === 0 && (
+                <div
+                  style={{
+                    padding: "16px",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "12px",
+                    background: "#fff",
+                    color: "#6b7280",
+                  }}
+                >
+                  아직 선정된 기사가 없습니다.
+                </div>
+              )}
+
+              {selectedItems.map((item, index) => (
+                <div
+                  key={`${item.link}-${index}`}
+                  style={{
+                    padding: "16px",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "12px",
+                    marginBottom: "16px",
+                    background: index < 3 ? "#f8fbff" : "#fff",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "inline-block",
+                      padding: "4px 10px",
+                      borderRadius: "999px",
+                      background: index < 3 ? "#2563eb" : "#e5e7eb",
+                      color: index < 3 ? "#fff" : "#111827",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      marginBottom: "10px",
+                    }}
+                  >
+                    {index < 3 ? `TOP ${index + 1}` : `선정 ${index + 1}`}
+                  </div>
+
+                  <h3
+                    style={{
+                      marginTop: 0,
+                      marginBottom: "8px",
+                      lineHeight: 1.6,
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    <a href={item.link} target="_blank" rel="noreferrer">
+                      {item.title}
+                    </a>
+                  </h3>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      flexWrap: "wrap",
+                      marginBottom: "8px",
+                      fontSize: "12px",
+                      color: "#64748b",
+                    }}
+                  >
+                    <span>{item.pubDate}</span>
+                    {item.sourceDomain && <span>· {item.sourceDomain}</span>}
+                    {typeof item.finalScore === "number" && (
+                      <span>· 점수 {item.finalScore.toFixed(2)}</span>
+                    )}
+                  </div>
+
+                  {(typeof item.keywordScore === "number" ||
+                    typeof item.tfidfScore === "number" ||
+                    typeof item.freshnessScore === "number" ||
+                    typeof item.importanceScore === "number") && (
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "8px",
+                        flexWrap: "wrap",
+                        marginBottom: "10px",
+                        fontSize: "12px",
+                        color: "#475569",
+                      }}
+                    >
+                      {typeof item.keywordScore === "number" && (
+                        <span>키워드 {item.keywordScore.toFixed(1)}</span>
+                      )}
+                      {typeof item.tfidfScore === "number" && (
+                        <span>TF-IDF {item.tfidfScore.toFixed(1)}</span>
+                      )}
+                      {typeof item.freshnessScore === "number" && (
+                        <span>최신성 {item.freshnessScore.toFixed(1)}</span>
+                      )}
+                      {typeof item.importanceScore === "number" && (
+                        <span>중요도 {item.importanceScore.toFixed(1)}</span>
+                      )}
+                      {typeof item.diversityPenalty === "number" &&
+                        item.diversityPenalty > 0 && (
+                          <span>다양성 패널티 -{item.diversityPenalty.toFixed(1)}</span>
+                        )}
+                    </div>
+                  )}
+
+                  {item.snippet && <p style={{ margin: 0, lineHeight: 1.7 }}>{item.snippet}</p>}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <aside
+            className="news-right news-sticky news-panel"
+            style={{
+              border: "1px solid #e5e7eb",
+              borderRadius: "16px",
+              padding: "16px",
+              background: "#fff",
+              maxHeight: "calc(100vh - 32px)",
+              overflow: "auto",
+              minWidth: 0,
+            }}
+          >
+            <h3 style={{ marginTop: 0 }}>브리핑 히스토리</h3>
+
+            {historyLoading && (
+              <div
+                style={{
+                  padding: "12px",
+                  borderRadius: "10px",
+                  background: "#f8fafc",
+                  color: "#64748b",
+                  fontSize: "14px",
+                }}
+              >
+                히스토리 불러오는 중...
+              </div>
+            )}
+
+            {!historyLoading && briefings.length === 0 && (
+              <div
+                style={{
+                  padding: "12px",
+                  borderRadius: "10px",
+                  background: "#f8fafc",
+                  color: "#64748b",
+                  fontSize: "14px",
+                }}
+              >
+                저장된 브리핑이 없습니다.
+              </div>
+            )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {briefings.map((item) => {
+                const isSelected = selectedBriefingId === item.id;
+
+                return (
+                  <div
+                    key={item.id}
+                    className="news-history-card"
+                    style={{
+                      border: isSelected ? "2px solid #2563eb" : "1px solid #e5e7eb",
+                      borderRadius: "12px",
+                      padding: "12px",
+                      background: isSelected ? "#eff6ff" : "#fafafa",
+                    }}
+                  >
+                    <button
+                      onClick={() => loadBriefingDetail(item.id)}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        border: "none",
+                        background: "transparent",
+                        cursor: "pointer",
+                        padding: 0,
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, wordBreak: "break-word" }}>{item.query}</div>
+                      <div style={{ marginTop: "4px", fontSize: "12px", color: "#64748b" }}>
+                        {item.categoryTag || "미분류"} ·{" "}
+                        {new Date(item.createdAt).toLocaleString("ko-KR")}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: "8px",
+                          fontSize: "13px",
+                          color: "#334155",
+                          lineHeight: 1.5,
+                          overflow: "hidden",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: "vertical",
+                        }}
+                      >
+                        {item.summary}
+                      </div>
+                    </button>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "8px",
+                        marginTop: "10px",
+                      }}
+                    >
+                      <button
+                        onClick={() => loadBriefingDetail(item.id)}
+                        style={{
+                          flex: 1,
+                          padding: "8px 10px",
+                          borderRadius: "8px",
+                          border: "1px solid #d1d5db",
+                          background: "#fff",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                        }}
+                      >
+                        {isSelected ? "선택됨" : "선택"}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteBriefing(item.id)}
+                        disabled={deletingBriefingId === item.id}
+                        style={{
+                          padding: "8px 10px",
+                          borderRadius: "8px",
+                          border: "1px solid #fecaca",
+                          background: "#fff5f5",
+                          color: "#b91c1c",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                        }}
+                      >
+                        {deletingBriefingId === item.id ? "삭제 중..." : "삭제"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {selectedBriefing && (
+              <div
+                style={{
+                  marginTop: "20px",
+                  paddingTop: "16px",
+                  borderTop: "1px solid #e5e7eb",
+                }}
+              >
+                <h3 style={{ marginTop: 0 }}>선택한 브리핑</h3>
+
+                <div style={{ fontWeight: 700, wordBreak: "break-word" }}>
+                  {selectedBriefing.query}
+                </div>
+
+                <div style={{ marginTop: "6px", fontSize: "12px", color: "#64748b" }}>
+                  {selectedBriefing.categoryTag || "미분류"} ·{" "}
+                  {new Date(selectedBriefing.createdAt).toLocaleString("ko-KR")}
+                </div>
+
+                {selectedBriefing.sentTo && (
+                  <div style={{ marginTop: "6px", fontSize: "12px", color: "#166534" }}>
+                    발송됨: {selectedBriefing.sentTo}
+                  </div>
+                )}
+
+                <pre
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    marginTop: "12px",
+                    fontSize: "13px",
+                    lineHeight: 1.6,
+                    background: "#f8fafc",
+                    padding: "10px",
+                    borderRadius: "10px",
+                  }}
+                >
+                  {selectedBriefing.summary}
+                </pre>
+
+                <div style={{ marginTop: "12px", fontWeight: 700 }}>기사 목록</div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                    marginTop: "8px",
+                  }}
+                >
+                  {(selectedBriefing.items || []).map((item) => (
+                    <a
+                      key={item.id}
+                      href={item.news.link}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        display: "block",
+                        padding: "10px",
+                        border: "1px solid #e5e7eb",
+                        borderRadius: "10px",
+                        textDecoration: "none",
+                        color: "#111827",
+                        background: "#fff",
+                      }}
+                    >
+                      <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "4px" }}>
+                        {item.rankOrder}위
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: 700,
+                          lineHeight: 1.5,
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {item.news.title}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </aside>
+        </div>
+      </main>
+    </>
   );
 }
