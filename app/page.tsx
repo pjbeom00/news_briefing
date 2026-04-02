@@ -2,6 +2,10 @@
 // 2026-03-27 : UI 업그레이드, AI 추천 기능 추가
 // 2026-03-30 : 검색 결과에 점수 정보 포함, 상위 20개 --> Gemini 재선별
 
+// app/page.tsx - 메인 페이지, 뉴스 30개 검색 후 최종 선정 기사 10개만 화면에 보이도록 정리
+// 2026-03-27 : UI 업그레이드, AI 추천 기능 추가
+// 2026-03-30 : 검색 결과에 점수 정보 포함, 상위 20개 --> Gemini 재선별
+
 "use client";
 
 import { KeyboardEvent, useEffect, useMemo, useState } from "react";
