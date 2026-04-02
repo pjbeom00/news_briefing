@@ -1,5 +1,5 @@
 // (2026-04-01) lib/briefing-runner.ts
-// (2026-04-02) 중복 기사 제거 + 구조화된 Gemini 브리핑 + 메닐 품질 개선
+// (2026-04-02) 중복 기사 제거 + 구조화된 Gemini 브리핑 + 메일 품질 개선
 
 import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/prisma";
@@ -35,6 +35,15 @@ type RunDailyBriefingResult = {
   reason?: string;
   sentTo?: string;
   queryCount?: number;
+  newsCount?: number;
+};
+
+type ResendBriefingResult = {
+  ok: boolean;
+  status: "SENT" | "FAILED";
+  briefingId: number;
+  sentTo?: string;
+  reason?: string;
   newsCount?: number;
 };
 
@@ -606,6 +615,52 @@ async function updateNewsSummaries(summaryMap: Map<number, string>) {
   }
 }
 
+async function buildBriefingMailPayload(input: {
+  queries: string[];
+  newsList: CandidateNews[];
+  scheduledDateLabel: string;
+}) {
+  const pendingSummaryMap = await summarizeNewsBatch(input.newsList);
+
+  if (pendingSummaryMap.size > 0) {
+    await updateNewsSummaries(pendingSummaryMap);
+  }
+
+  const summaryMap = new Map<number, string>();
+
+  for (const item of input.newsList) {
+    summaryMap.set(
+      item.id,
+      pendingSummaryMap.get(item.id) || item.summary || buildFallbackSummary(item)
+    );
+  }
+
+  const structuredBriefing = await generateStructuredBriefing({
+    queries: input.queries,
+    newsList: input.newsList,
+    summaryMap,
+  });
+
+  const html = buildMailHtml({
+    scheduledDateLabel: input.scheduledDateLabel,
+    structured: structuredBriefing,
+    items: input.newsList.map((item, index) => ({
+      rank: index + 1,
+      title: item.title,
+      link: item.link,
+      summary: summaryMap.get(item.id) || buildFallbackSummary(item),
+      sourceQuery: item.sourceQuery,
+      createdAt: item.createdAt,
+    })),
+  });
+
+  return {
+    overallSummary: structuredBriefing.trend,
+    structuredBriefing,
+    html,
+  };
+}
+
 export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
   const { BRIEFING_TO_EMAIL, BRIEFING_MAX_NEWS, BRIEFING_MAX_QUERIES } =
     getBriefingEnv();
@@ -750,28 +805,11 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
     };
   }
 
-  const pendingSummaryMap = await summarizeNewsBatch(finalNews);
-
-  if (pendingSummaryMap.size > 0) {
-    await updateNewsSummaries(pendingSummaryMap);
-  }
-
-  const summaryMap = new Map<number, string>();
-
-  for (const item of finalNews) {
-    summaryMap.set(
-      item.id,
-      pendingSummaryMap.get(item.id) || item.summary || buildFallbackSummary(item)
-    );
-  }
-
-  const structuredBriefing = await generateStructuredBriefing({
+  const { overallSummary, html } = await buildBriefingMailPayload({
     queries: queryCandidates,
     newsList: finalNews,
-    summaryMap,
+    scheduledDateLabel,
   });
-
-  const overallSummary = structuredBriefing.trend;
 
   const briefing = existing
     ? await prisma.briefing.update({
@@ -808,19 +846,6 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
       briefingId: briefing.id,
       newsId: item.id,
       rankOrder: index + 1,
-    })),
-  });
-
-  const html = buildMailHtml({
-    scheduledDateLabel,
-    structured: structuredBriefing,
-    items: finalNews.map((item, index) => ({
-      rank: index + 1,
-      title: item.title,
-      link: item.link,
-      summary: summaryMap.get(item.id) || buildFallbackSummary(item),
-      sourceQuery: item.sourceQuery,
-      createdAt: item.createdAt,
     })),
   });
 
@@ -867,6 +892,109 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
       reason: error?.message || "메일 발송 실패",
       queryCount: queryCandidates.length,
       newsCount: finalNews.length,
+    };
+  }
+}
+
+export async function resendBriefing(briefingId: number): Promise<ResendBriefingResult> {
+  const { BRIEFING_TO_EMAIL } = getBriefingEnv();
+
+  const briefing = await prisma.briefing.findUnique({
+    where: { id: briefingId },
+    include: {
+      items: {
+        orderBy: { rankOrder: "asc" },
+        include: {
+          news: true,
+        },
+      },
+    },
+  });
+
+  if (!briefing) {
+    return {
+      ok: false,
+      status: "FAILED",
+      briefingId,
+      reason: "브리핑을 찾을 수 없습니다.",
+    };
+  }
+
+  const newsList: CandidateNews[] = briefing.items.map((item) => ({
+    id: item.news.id,
+    title: item.news.title,
+    link: item.news.link,
+    snippet: item.news.snippet,
+    summary: item.news.summary,
+    sourceQuery: item.news.sourceQuery,
+    createdAt: item.news.createdAt,
+  }));
+
+  if (newsList.length === 0) {
+    return {
+      ok: false,
+      status: "FAILED",
+      briefingId,
+      reason: "재발송할 기사 목록이 없습니다.",
+    };
+  }
+
+  const queryCandidates = briefing.query
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const scheduledDateLabel = getKstDayKey(briefing.scheduledDate || briefing.createdAt);
+
+  const { overallSummary, html } = await buildBriefingMailPayload({
+    queries: queryCandidates,
+    newsList,
+    scheduledDateLabel,
+  });
+
+  try {
+    await sendMail({
+      to: BRIEFING_TO_EMAIL,
+      subject: `[CJ대한통운 브리핑][재발송] ${scheduledDateLabel} 오전 브리핑`,
+      html,
+    });
+
+    await prisma.briefing.update({
+      where: { id: briefing.id },
+      data: {
+        summary: overallSummary,
+        sentTo: BRIEFING_TO_EMAIL,
+        sentAt: getKstNow(),
+        status: "SENT",
+        errorMessage: null,
+      },
+    });
+
+    return {
+      ok: true,
+      status: "SENT",
+      briefingId: briefing.id,
+      sentTo: BRIEFING_TO_EMAIL,
+      newsCount: newsList.length,
+    };
+  } catch (error: any) {
+    console.error("BRIEFING RESEND ERROR:", error);
+
+    await prisma.briefing.update({
+      where: { id: briefing.id },
+      data: {
+        status: "FAILED",
+        errorMessage: error?.message || "재발송 실패",
+      },
+    });
+
+    return {
+      ok: false,
+      status: "FAILED",
+      briefingId: briefing.id,
+      sentTo: BRIEFING_TO_EMAIL,
+      reason: error?.message || "재발송 실패",
+      newsCount: newsList.length,
     };
   }
 }
