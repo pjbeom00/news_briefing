@@ -3,6 +3,8 @@
 // (2026-03-30) : 검색 결과에 점수 정보 포함, 상위 20개 --> Gemini 재선별
 // (2026-04-02) : page 메뉴 구조 변경
 
+// app/page.tsx
+
 import Link from "next/link";
 
 type MenuCard = {
@@ -35,13 +37,13 @@ export default function HomePage() {
       style={{
         minHeight: "100vh",
         background: "linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%)",
-        padding: "48px 24px",
+        padding: "20px 10px 48px",
         fontFamily: "Arial, Apple SD Gothic Neo, Noto Sans KR, sans-serif",
       }}
     >
       <div
         style={{
-          maxWidth: 1100,
+          maxWidth: 1120,
           margin: "0 auto",
         }}
       >
@@ -89,12 +91,13 @@ export default function HomePage() {
               fontSize: 16,
               lineHeight: 1.9,
               color: "#cbd5e1",
-              maxWidth: 760,
+              maxWidth: 900,
+              wordBreak: "keep-all",
             }}
           >
-            검색어 기반 기사 탐색, 중복 제거와 중요도 반영, Gemini 요약,
-            브리핑 메일 발송, 브리핑 이력 관리까지 하나의 흐름으로 사용할 수
-            있는 화면입니다.
+            검색어 기반 기사 탐색, 중복 제거와 중요도 반영, Gemini 요약, 브리핑 메일 발송, 브리핑 이력 관리까지
+            <br />
+            하나의 흐름으로 사용할 수 있는 화면입니다.
           </p>
         </section>
 
@@ -112,6 +115,8 @@ export default function HomePage() {
               style={{
                 textDecoration: "none",
                 color: "inherit",
+                display: "block",
+                width: "100%",
               }}
             >
               <article
@@ -126,6 +131,7 @@ export default function HomePage() {
                   flexDirection: "column",
                   justifyContent: "space-between",
                   cursor: "pointer",
+                  height: "100%",
                 }}
               >
                 <div>
@@ -162,6 +168,7 @@ export default function HomePage() {
                       fontSize: 15,
                       lineHeight: 1.9,
                       color: "#475569",
+                      wordBreak: "keep-all",
                     }}
                   >
                     {card.description}
@@ -190,14 +197,19 @@ export default function HomePage() {
                     style={{
                       width: 40,
                       height: 40,
-                      borderRadius: 999,
+                      minWidth: 40,
+                      minHeight: 40,
+                      borderRadius: "50%",
                       background: "#2563eb",
                       color: "#ffffff",
-                      display: "inline-flex",
+                      display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       fontSize: 20,
                       fontWeight: 800,
+                      lineHeight: 1,
+                      textAlign: "center",
+                      flexShrink: 0,
                     }}
                   >
                     →
