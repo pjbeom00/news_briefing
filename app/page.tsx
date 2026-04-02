@@ -95,7 +95,7 @@ export default function HomePage() {
               wordBreak: "keep-all",
             }}
           >
-            검색어 기반 기사 탐색, 중복 제거와 중요도 반영, Gemini 요약, 브리핑 메일 발송, 브리핑 이력 관리까지
+            검색어 기반 기사 탐색, 중복 제거와 중요도 반영, Gemini 요약, 브리핑 메일 발송, 브리핑 이력 관리
             <br />
             하나의 흐름으로 사용할 수 있는 화면입니다.
           </p>
