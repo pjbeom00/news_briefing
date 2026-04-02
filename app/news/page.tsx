@@ -230,7 +230,6 @@ function getRankScore(item: SearchItem, query: string) {
 export default function NewsPage() {
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("전체");
-  const [savedQueryName, setSavedQueryName] = useState("");
 
   const [rawItems, setRawItems] = useState<SearchItem[]>([]);
   const [selectedItems, setSelectedItems] = useState<SearchItem[]>([]);
@@ -528,8 +527,7 @@ export default function NewsPage() {
   };
 
   const handleSaveQuery = async () => {
-    const effectiveQuery = query.trim() || savedQueryName.trim();
-    const effectiveName = savedQueryName.trim() || effectiveQuery;
+    const effectiveQuery = query.trim();
 
     if (!effectiveQuery) {
       setError("저장할 검색어가 비어 있습니다.");
@@ -547,7 +545,7 @@ export default function NewsPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          name: effectiveName,
+          name: effectiveQuery,
           query: effectiveQuery,
           category: selectedCategory,
         }),
@@ -557,11 +555,6 @@ export default function NewsPage() {
 
       if (!res.ok) {
         throw new Error((data as any).error || "키워드 저장 실패");
-      }
-
-      setSavedQueryName("");
-      if (!query.trim()) {
-        setQuery(effectiveQuery);
       }
 
       setNotice(`키워드가 저장되었습니다. 카테고리: ${(data as any).category || "기타"}`);
@@ -861,15 +854,22 @@ export default function NewsPage() {
             </div>
           )}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              marginBottom: "20px",
+            }}
+          >
             {recommendations.length === 0 && (
               <div
                 style={{
-                  padding: "12px",
+                  padding: "10px 12px",
                   borderRadius: "10px",
                   background: "#f8fafc",
                   color: "#64748b",
-                  fontSize: "14px",
+                  fontSize: "13px",
                 }}
               >
                 추천 키워드가 없습니다.
@@ -882,37 +882,57 @@ export default function NewsPage() {
                 style={{
                   border: "1px solid #dbeafe",
                   borderRadius: "12px",
-                  padding: "12px",
+                  padding: "10px 12px",
                   background: "#f8fbff",
                 }}
               >
-                <div style={{ fontWeight: 700 }}>{item.keyword}</div>
                 <div
                   style={{
-                    marginTop: "6px",
-                    fontSize: "13px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "8px",
+                    marginBottom: "6px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      color: "#0f172a",
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    {item.keyword}
+                  </div>
+
+                  <button
+                    onClick={() => handleApplyRecommendation(item)}
+                    style={{
+                      padding: "5px 10px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: "#111827",
+                      color: "#fff",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                      flexShrink: 0,
+                    }}
+                  >
+                    적용
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    fontSize: "12px",
                     color: "#475569",
-                    lineHeight: 1.5,
+                    lineHeight: 1.45,
+                    wordBreak: "keep-all",
                   }}
                 >
                   {item.reason}
                 </div>
-
-                <button
-                  onClick={() => handleApplyRecommendation(item)}
-                  style={{
-                    marginTop: "10px",
-                    padding: "6px 10px",
-                    borderRadius: "8px",
-                    border: "none",
-                    background: "#111827",
-                    color: "#fff",
-                    cursor: "pointer",
-                    fontSize: "12px",
-                  }}
-                >
-                  적용
-                </button>
               </div>
             ))}
           </div>
@@ -1064,14 +1084,7 @@ export default function NewsPage() {
               background: "#fff",
             }}
           >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 220px",
-                gap: "12px",
-                marginBottom: "12px",
-              }}
-            >
+            <div style={{ marginBottom: "12px" }}>
               <textarea
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -1085,35 +1098,9 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
                   borderRadius: "8px",
                   border: "1px solid #ccc",
                   resize: "vertical",
+                  boxSizing: "border-box",
                 }}
               />
-
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                <input
-                  value={savedQueryName}
-                  onChange={(e) => setSavedQueryName(e.target.value)}
-                  placeholder="저장 이름 (비워두면 검색어 사용)"
-                  style={{
-                    padding: "12px",
-                    borderRadius: "8px",
-                    border: "1px solid #ccc",
-                  }}
-                />
-                <button
-                  onClick={handleSaveQuery}
-                  disabled={savingQuery || (!query.trim() && !savedQueryName.trim())}
-                  style={{
-                    padding: "12px 18px",
-                    borderRadius: "8px",
-                    border: "none",
-                    background: "#0f766e",
-                    color: "#fff",
-                    cursor: "pointer",
-                  }}
-                >
-                  {savingQuery ? "저장 중..." : "키워드 저장"}
-                </button>
-              </div>
             </div>
 
             <div
@@ -1152,6 +1139,21 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
                 }}
               >
                 {summarizing ? "요약 중..." : "Gemini 요약"}
+              </button>
+
+              <button
+                onClick={handleSaveQuery}
+                disabled={savingQuery || !query.trim()}
+                style={{
+                  padding: "12px 18px",
+                  borderRadius: "8px",
+                  border: "none",
+                  background: "#0f766e",
+                  color: "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                {savingQuery ? "저장 중..." : "키워드 저장"}
               </button>
             </div>
 
