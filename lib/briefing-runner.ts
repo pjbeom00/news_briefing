@@ -1,4 +1,5 @@
 // (2026-04-01) lib/briefing-runner.ts
+// (2026-04-02) 중복 기사 제거 + 구조화된 Gemini 브리핑 + 메닐 품질 개선
 
 import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/prisma";
@@ -20,6 +21,13 @@ type SummaryItem = {
   summary: string;
 };
 
+type StructuredBriefing = {
+  trend: string;
+  keyPoints: string[];
+  companyInsight: string;
+  comment: string;
+};
+
 type RunDailyBriefingResult = {
   ok: boolean;
   status: "SENT" | "SKIPPED" | "FAILED";
@@ -31,12 +39,15 @@ type RunDailyBriefingResult = {
 };
 
 function normalizeText(value: string) {
-  return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function tokenize(value: string) {
   return normalizeText(value)
-    .replace(/[|,/()\-_[\]]+/g, " ")
+    .replace(/[|,/()\-_[\]:"'`~!?]+/g, " ")
     .split(" ")
     .map((x) => x.trim())
     .filter(Boolean);
@@ -97,7 +108,7 @@ function getKstDayKey(date = new Date()) {
   const month = String(kst.getUTCMonth() + 1).padStart(2, "0");
   const day = String(kst.getUTCDate()).padStart(2, "0");
 
-  return `${year}-${month}-${day}`;
+  return `${year}.${month}.${day}`;
 }
 
 function getKstStartOfDay(date = new Date()) {
@@ -116,11 +127,11 @@ function getRecentWindowStart(hours: number) {
 function buildFallbackSummary(news: CandidateNews) {
   const base = news.snippet?.trim() || news.title.trim();
 
-  if (base.length <= 140) {
+  if (base.length <= 120) {
     return base;
   }
 
-  return `${base.slice(0, 137)}...`;
+  return `${base.slice(0, 117)}...`;
 }
 
 function collectQueryCandidates(rows: Array<{ query: string }>, limit: number) {
@@ -153,7 +164,7 @@ function scoreNews(news: CandidateNews, queries: string[]) {
     if (!normalizedQuery) continue;
 
     if (haystack.includes(normalizedQuery)) {
-      score += 10;
+      score += 12;
     }
 
     for (const token of tokenize(query)) {
@@ -164,6 +175,14 @@ function scoreNews(news: CandidateNews, queries: string[]) {
     }
   }
 
+  if (/투자|계약|확대|수주|진출|협력|제재|공급|실적|매출|생산/i.test(news.title)) {
+    score += 5;
+  }
+
+  if (/\d+%|\d+억|\d+조|\d+만|\d+배/.test(news.title)) {
+    score += 3;
+  }
+
   const recentBoost = Math.max(
     0,
     5 - Math.floor((Date.now() - news.createdAt.getTime()) / (1000 * 60 * 60 * 6))
@@ -171,66 +190,198 @@ function scoreNews(news: CandidateNews, queries: string[]) {
 
   score += recentBoost;
 
-  if (news.summary) {
-    score += 1;
+  return score;
+}
+
+function isSimilarTitle(a: string, b: string) {
+  const aa = normalizeText(a).replace(/[^\p{L}\p{N}\s]/gu, "");
+  const bb = normalizeText(b).replace(/[^\p{L}\p{N}\s]/gu, "");
+
+  if (!aa || !bb) return false;
+  if (aa === bb) return true;
+  if (aa.includes(bb) || bb.includes(aa)) return true;
+
+  const tokensA = tokenize(aa);
+  const tokensB = tokenize(bb);
+
+  if (!tokensA.length || !tokensB.length) return false;
+
+  const overlap = tokensA.filter((token) => tokensB.includes(token)).length;
+  const minLength = Math.min(tokensA.length, tokensB.length);
+
+  return overlap >= Math.ceil(minLength * 0.6);
+}
+
+function deduplicateNews(newsList: CandidateNews[]) {
+  const result: CandidateNews[] = [];
+
+  for (const news of newsList) {
+    const isDuplicate = result.some((existing) =>
+      isSimilarTitle(existing.title, news.title)
+    );
+
+    if (!isDuplicate) {
+      result.push(news);
+    }
   }
 
-  return score;
+  return result;
+}
+
+function buildFallbackStructuredBriefing(input: {
+  queries: string[];
+  newsList: CandidateNews[];
+  summaryMap: Map<number, string>;
+}): StructuredBriefing {
+  const topNews = input.newsList.slice(0, 3);
+  const querySummary = input.queries.slice(0, 3).join(", ") || "주요 관심 키워드";
+  const keyPoints = topNews.map((item) => {
+    const summary = input.summaryMap.get(item.id) || buildFallbackSummary(item);
+    return summary;
+  });
+
+  return {
+    trend: `${querySummary} 중심으로 최근 기사 흐름을 보면 주요 기업 활동과 시장 변화가 함께 부각되고 있습니다.`,
+    keyPoints:
+      keyPoints.length > 0
+        ? keyPoints.slice(0, 3)
+        : ["주요 기사를 바탕으로 핵심 흐름을 정리했습니다."],
+    companyInsight:
+      "기업 관점에서는 투자, 생산, 공급망, 사업 확장과 관련된 변화가 실제 사업 운영과 전략에 영향을 줄 수 있습니다.",
+    comment:
+      "중복 이슈를 제외하고 실질적인 사업 변화나 수치가 포함된 뉴스를 우선적으로 추적하는 것이 좋습니다.",
+  };
 }
 
 function buildMailHtml(input: {
   scheduledDateLabel: string;
-  querySummary: string;
-  overallSummary: string;
+  structured: StructuredBriefing;
   items: Array<{
     rank: number;
     title: string;
     link: string;
     summary: string;
     sourceQuery: string | null;
+    createdAt: Date;
   }>;
 }) {
+  const keyPointsHtml = input.structured.keyPoints
+    .map(
+      (point) => `
+        <li style="margin-bottom:8px;line-height:1.7;color:#1f2937;">
+          ${escapeHtml(point)}
+        </li>
+      `
+    )
+    .join("");
+
   const itemsHtml = input.items
     .map(
       (item) => `
-        <tr>
-          <td style="padding:16px 0;border-bottom:1px solid #e5e7eb;">
-            <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">TOP ${item.rank}${item.sourceQuery ? ` · ${escapeHtml(item.sourceQuery)}` : ""}</div>
-            <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:8px;">
-              <a href="${escapeHtml(item.link)}" target="_blank" style="color:#111827;text-decoration:none;">
-                ${escapeHtml(item.title)}
-              </a>
-            </div>
-            <div style="font-size:14px;line-height:1.7;color:#374151;">
-              ${escapeHtml(item.summary)}
-            </div>
-          </td>
-        </tr>
+        <div style="background:#ffffff;border:1px solid #dbeafe;border-radius:12px;padding:16px;margin-bottom:14px;">
+          <div style="display:inline-block;background:#2563eb;color:#ffffff;font-size:12px;font-weight:700;border-radius:999px;padding:4px 10px;margin-bottom:10px;">
+            TOP ${item.rank}
+          </div>
+          <div style="font-size:16px;font-weight:700;color:#111827;line-height:1.5;margin-bottom:8px;">
+            <a href="${escapeHtml(item.link)}" target="_blank" style="color:#111827;text-decoration:none;">
+              ${escapeHtml(item.title)}
+            </a>
+          </div>
+          <div style="font-size:12px;color:#6b7280;margin-bottom:8px;">
+            ${item.createdAt.toUTCString()}${item.sourceQuery ? ` · ${escapeHtml(item.sourceQuery)}` : ""}
+          </div>
+          <div style="font-size:14px;line-height:1.7;color:#374151;">
+            ${escapeHtml(item.summary)}
+          </div>
+        </div>
+      `
+    )
+    .join("");
+
+  const fullListHtml = input.items
+    .map(
+      (item, index) => `
+        <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:10px;">
+          <div style="font-size:13px;color:#6b7280;margin-bottom:6px;">기사 ${index + 1}</div>
+          <div style="font-size:14px;font-weight:700;line-height:1.6;color:#111827;">
+            <a href="${escapeHtml(item.link)}" target="_blank" style="color:#111827;text-decoration:none;">
+              ${escapeHtml(item.title)}
+            </a>
+          </div>
+        </div>
       `
     )
     .join("");
 
   return `
-    <div style="background:#f9fafb;padding:24px;font-family:Arial,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;">
-      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:760px;margin:0 auto;background:#ffffff;border-radius:12px;padding:28px;">
+    <div style="background:#f3f4f6;padding:24px;font-family:Arial,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:760px;margin:0 auto;">
+        <tr>
+          <td style="background:#0f172a;border-radius:16px;padding:24px 24px 20px 24px;">
+            <div style="font-size:28px;font-weight:800;color:#ffffff;margin-bottom:8px;">CJ대한통운 브리핑</div>
+            <div style="font-size:12px;color:#cbd5e1;">${escapeHtml(input.scheduledDateLabel)} 오전 브리핑</div>
+          </td>
+        </tr>
+
+        <tr><td style="height:16px;"></td></tr>
+
+        <tr>
+          <td style="background:#e0f2fe;border:1px solid #7dd3fc;border-radius:14px;padding:18px 20px;">
+            <div style="font-size:16px;font-weight:800;color:#0f172a;margin-bottom:12px;">오늘의 핵심 동향</div>
+            <div style="font-size:14px;line-height:1.8;color:#1f2937;">
+              ${escapeHtml(input.structured.trend)}
+            </div>
+          </td>
+        </tr>
+
+        <tr><td style="height:14px;"></td></tr>
+
+        <tr>
+          <td style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:18px 20px;">
+            <div style="font-size:16px;font-weight:800;color:#111827;margin-bottom:12px;">기사별 핵심 포인트</div>
+            <ul style="padding-left:20px;margin:0;">
+              ${keyPointsHtml}
+            </ul>
+          </td>
+        </tr>
+
+        <tr><td style="height:14px;"></td></tr>
+
+        <tr>
+          <td style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:18px 20px;">
+            <div style="font-size:16px;font-weight:800;color:#111827;margin-bottom:12px;">기업 관점 요약</div>
+            <div style="font-size:14px;line-height:1.8;color:#1f2937;">
+              ${escapeHtml(input.structured.companyInsight)}
+            </div>
+          </td>
+        </tr>
+
+        <tr><td style="height:14px;"></td></tr>
+
+        <tr>
+          <td style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:18px 20px;">
+            <div style="font-size:16px;font-weight:800;color:#111827;margin-bottom:12px;">마지막 코멘트</div>
+            <div style="font-size:14px;line-height:1.8;color:#1f2937;">
+              ${escapeHtml(input.structured.comment)}
+            </div>
+          </td>
+        </tr>
+
+        <tr><td style="height:20px;"></td></tr>
+
         <tr>
           <td>
-            <div style="font-size:24px;font-weight:800;color:#111827;margin-bottom:8px;">매일 아침 뉴스 브리핑</div>
-            <div style="font-size:13px;color:#6b7280;margin-bottom:20px;">${escapeHtml(input.scheduledDateLabel)} 기준 자동 생성</div>
+            <div style="font-size:20px;font-weight:800;color:#111827;margin-bottom:14px;">오늘의 핵심 기사 TOP ${input.items.length}</div>
+            ${itemsHtml}
+          </td>
+        </tr>
 
-            <div style="background:#f3f4f6;border-radius:10px;padding:16px;margin-bottom:20px;">
-              <div style="font-size:13px;color:#6b7280;margin-bottom:6px;">주요 관심 검색어</div>
-              <div style="font-size:15px;font-weight:600;color:#111827;">${escapeHtml(input.querySummary)}</div>
-            </div>
+        <tr><td style="height:12px;"></td></tr>
 
-            <div style="background:#eff6ff;border-radius:10px;padding:16px;margin-bottom:24px;">
-              <div style="font-size:13px;color:#2563eb;margin-bottom:6px;">오늘의 한줄 요약</div>
-              <div style="font-size:15px;line-height:1.7;color:#1f2937;">${escapeHtml(input.overallSummary)}</div>
-            </div>
-
-            <table width="100%" cellpadding="0" cellspacing="0">
-              ${itemsHtml}
-            </table>
+        <tr>
+          <td>
+            <div style="font-size:18px;font-weight:800;color:#111827;margin-bottom:14px;">전체 기사 목록</div>
+            ${fullListHtml}
           </td>
         </tr>
       </table>
@@ -256,7 +407,7 @@ async function summarizeNewsBatch(newsList: CandidateNews[]) {
   });
 
   const prompt = `
-너는 뉴스 브리핑 요약기다.
+너는 뉴스 기사 요약기다.
 아래 기사 목록을 보고 각 기사마다 2문장 이내의 한국어 요약을 작성해라.
 출력은 반드시 JSON만 반환한다.
 
@@ -336,6 +487,114 @@ ${targets
   }
 }
 
+async function generateStructuredBriefing(input: {
+  queries: string[];
+  newsList: CandidateNews[];
+  summaryMap: Map<number, string>;
+}) {
+  const { GEMINI_API_KEY } = getBriefingEnv();
+
+  if (!GEMINI_API_KEY || input.newsList.length === 0) {
+    return buildFallbackStructuredBriefing(input);
+  }
+
+  const ai = new GoogleGenAI({
+    apiKey: GEMINI_API_KEY,
+  });
+
+  const prompt = `
+너는 기업용 뉴스 브리핑 분석가다.
+아래 기사들을 종합해서 하나의 구조화된 브리핑을 작성해라.
+개별 기사 요약을 단순 나열하지 말고, 전체 흐름을 분석해서 작성해라.
+출력은 반드시 JSON만 반환한다.
+
+형식:
+{
+  "trend": "오늘의 핵심 동향",
+  "keyPoints": ["핵심 포인트1", "핵심 포인트2", "핵심 포인트3"],
+  "companyInsight": "기업 관점 요약",
+  "comment": "마지막 코멘트"
+}
+
+조건:
+1. trend는 2~3문장
+2. keyPoints는 3개
+3. companyInsight는 실무자 관점
+4. comment는 전략적 시사점
+5. 반복되는 기사들은 하나의 흐름으로 묶어라
+6. 과장 금지
+7. 한국어로 작성
+
+[참고 검색어]
+${input.queries.join(", ")}
+
+[기사 목록]
+${input.newsList
+  .map((item) => {
+    const summary = input.summaryMap.get(item.id) || buildFallbackSummary(item);
+    return `
+- title: ${item.title}
+  summary: ${summary}
+  sourceQuery: ${item.sourceQuery || ""}
+`;
+  })
+  .join("\n")}
+`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseJsonSchema: {
+          type: "object",
+          properties: {
+            trend: { type: "string" },
+            keyPoints: {
+              type: "array",
+              items: { type: "string" },
+            },
+            companyInsight: { type: "string" },
+            comment: { type: "string" },
+          },
+          required: ["trend", "keyPoints", "companyInsight", "comment"],
+        },
+      },
+    });
+
+    const parsed = safeJsonParse<StructuredBriefing>(response.text || "");
+
+    if (
+      !parsed ||
+      !parsed.trend ||
+      !Array.isArray(parsed.keyPoints) ||
+      !parsed.companyInsight ||
+      !parsed.comment
+    ) {
+      return buildFallbackStructuredBriefing(input);
+    }
+
+    return {
+      trend: String(parsed.trend || "").trim(),
+      keyPoints: parsed.keyPoints
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .slice(0, 3),
+      companyInsight: String(parsed.companyInsight || "").trim(),
+      comment: String(parsed.comment || "").trim(),
+    };
+  } catch (error) {
+    if (isQuotaError(error)) {
+      console.error("STRUCTURED BRIEFING QUOTA FALLBACK:", error);
+      return buildFallbackStructuredBriefing(input);
+    }
+
+    console.error("STRUCTURED BRIEFING ERROR:", error);
+    return buildFallbackStructuredBriefing(input);
+  }
+}
+
 async function updateNewsSummaries(summaryMap: Map<number, string>) {
   const entries = [...summaryMap.entries()];
 
@@ -348,10 +607,12 @@ async function updateNewsSummaries(summaryMap: Map<number, string>) {
 }
 
 export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
-  const { BRIEFING_TO_EMAIL, BRIEFING_MAX_NEWS, BRIEFING_MAX_QUERIES } = getBriefingEnv();
+  const { BRIEFING_TO_EMAIL, BRIEFING_MAX_NEWS, BRIEFING_MAX_QUERIES } =
+    getBriefingEnv();
 
   const scheduledDate = getKstStartOfDay();
   const scheduledDateLabel = getKstDayKey();
+
   const existing = await prisma.briefing.findUnique({
     where: { scheduledDate },
   });
@@ -429,7 +690,7 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
       },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: 120,
+    take: 150,
     select: {
       id: true,
       title: true,
@@ -448,15 +709,15 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
     }))
     .sort((a, b) => b.score - a.score || b.id - a.id);
 
-  const selectedNews = scoredNews
+  const filteredNews = scoredNews
     .filter((item) => item.score > 0)
-    .slice(0, BRIEFING_MAX_NEWS)
     .map(({ score, ...rest }) => rest);
 
+  const deduplicatedNews = deduplicateNews(filteredNews);
   const finalNews =
-    selectedNews.length > 0
-      ? selectedNews
-      : recentNews.slice(0, BRIEFING_MAX_NEWS);
+    deduplicatedNews.length > 0
+      ? deduplicatedNews.slice(0, BRIEFING_MAX_NEWS)
+      : deduplicateNews(recentNews).slice(0, BRIEFING_MAX_NEWS);
 
   if (finalNews.length === 0) {
     const briefing = existing
@@ -504,7 +765,13 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
     );
   }
 
-  const overallSummary = `${queryCandidates.slice(0, 3).join(", ")} 중심으로 주요 기사 ${finalNews.length}건을 정리했습니다.`;
+  const structuredBriefing = await generateStructuredBriefing({
+    queries: queryCandidates,
+    newsList: finalNews,
+    summaryMap,
+  });
+
+  const overallSummary = structuredBriefing.trend;
 
   const briefing = existing
     ? await prisma.briefing.update({
@@ -546,21 +813,21 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
 
   const html = buildMailHtml({
     scheduledDateLabel,
-    querySummary: queryCandidates.join(", "),
-    overallSummary,
+    structured: structuredBriefing,
     items: finalNews.map((item, index) => ({
       rank: index + 1,
       title: item.title,
       link: item.link,
       summary: summaryMap.get(item.id) || buildFallbackSummary(item),
       sourceQuery: item.sourceQuery,
+      createdAt: item.createdAt,
     })),
   });
 
   try {
     await sendMail({
       to: BRIEFING_TO_EMAIL,
-      subject: `[뉴스 브리핑] ${scheduledDateLabel} 아침 브리핑`,
+      subject: `[CJ대한통운 브리핑] ${scheduledDateLabel} 오전 브리핑`,
       html,
     });
 
