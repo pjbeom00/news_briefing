@@ -41,6 +41,7 @@ type BriefingRow = {
   createdAt: string;
   structured?: StructuredSummary | null;
   templateType?: BriefingTemplateType;
+  isFavorite?: boolean;
   items: BriefingNewsItem[];
 };
 
@@ -88,6 +89,10 @@ function inferTemplateType(row: BriefingRow): BriefingTemplateType {
   if (row.templateType) return row.templateType;
   if (row.categoryTag?.includes("PRACTICAL")) return "PRACTICAL";
   return "EXECUTIVE";
+}
+
+function isFavoriteBriefing(categoryTag?: string | null) {
+  return String(categoryTag || "").split("_").includes("FAVORITE");
 }
 
 function parseStructuredSummaryFromText(text: string): StructuredSummary {
@@ -232,10 +237,12 @@ export default function AdminBriefingsPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [resendingId, setResendingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [favoriteLoadingId, setFavoriteLoadingId] = useState<number | null>(null);
 
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [templateFilter, setTemplateFilter] = useState("ALL");
+  const [favoriteFilter, setFavoriteFilter] = useState("ALL");
   const [templateType, setTemplateType] =
     useState<BriefingTemplateType>("EXECUTIVE");
 
@@ -249,22 +256,43 @@ export default function AdminBriefingsPage() {
   const filteredBriefings = useMemo(() => {
     const normalizedKeyword = normalizeText(keyword);
 
-    return briefings.filter((item) => {
-      const inferredTemplate = inferTemplateType(item);
-      const haystack = normalizeText(
-        `${item.query} ${item.summary} ${item.categoryTag || ""} ${item.sentTo || ""}`
-      );
+    return [...briefings]
+      .filter((item) => {
+        const inferredTemplate = inferTemplateType(item);
+        const favorite = Boolean(item.isFavorite);
+        const haystack = normalizeText(
+          `${item.query} ${item.summary} ${item.categoryTag || ""} ${item.sentTo || ""}`
+        );
 
-      const keywordMatched = !normalizedKeyword || haystack.includes(normalizedKeyword);
-      const statusMatched =
-        statusFilter === "ALL" ||
-        String(item.status || "UNKNOWN").toUpperCase() === statusFilter;
-      const templateMatched =
-        templateFilter === "ALL" || inferredTemplate === templateFilter;
+        const keywordMatched = !normalizedKeyword || haystack.includes(normalizedKeyword);
+        const statusMatched =
+          statusFilter === "ALL" ||
+          String(item.status || "UNKNOWN").toUpperCase() === statusFilter;
+        const templateMatched =
+          templateFilter === "ALL" || inferredTemplate === templateFilter;
+        const favoriteMatched =
+          favoriteFilter === "ALL" ||
+          (favoriteFilter === "FAVORITE" ? favorite : !favorite);
 
-      return keywordMatched && statusMatched && templateMatched;
-    });
-  }, [briefings, keyword, statusFilter, templateFilter]);
+        return keywordMatched && statusMatched && templateMatched && favoriteMatched;
+      })
+      .sort((a, b) => {
+        const af = a.isFavorite ? 1 : 0;
+        const bf = b.isFavorite ? 1 : 0;
+        if (bf !== af) return bf - af;
+        return (
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+      });
+  }, [briefings, keyword, statusFilter, templateFilter, favoriteFilter]);
+
+  const normalizeBriefing = (row: BriefingRow): BriefingRow => ({
+    ...row,
+    structured: row.structured || parseStructuredSummaryFromText(row.summary),
+    templateType: inferTemplateType(row),
+    isFavorite: isFavoriteBriefing(row.categoryTag),
+    items: Array.isArray(row.items) ? row.items : [],
+  });
 
   const loadBriefings = async () => {
     try {
@@ -278,14 +306,7 @@ export default function AdminBriefingsPage() {
         throw new Error((data as any).error || "브리핑 목록 조회 실패");
       }
 
-      const rows = (((data as any).data || []) as BriefingRow[]).map((row) => ({
-        ...row,
-        structured:
-          row.structured || parseStructuredSummaryFromText(row.summary),
-        templateType: inferTemplateType(row),
-        items: Array.isArray(row.items) ? row.items : [],
-      }));
-
+      const rows = (((data as any).data || []) as BriefingRow[]).map(normalizeBriefing);
       setBriefings(rows);
     } catch (err: any) {
       console.error(err);
@@ -308,15 +329,7 @@ export default function AdminBriefingsPage() {
       }
 
       const row = (((data as any).data || data) as BriefingRow) || null;
-      const normalized = row
-        ? {
-            ...row,
-            structured:
-              row.structured || parseStructuredSummaryFromText(row.summary),
-            templateType: inferTemplateType(row),
-            items: Array.isArray(row.items) ? row.items : [],
-          }
-        : null;
+      const normalized = row ? normalizeBriefing(row) : null;
 
       setSelectedBriefing(normalized);
       setSelectedId(id);
@@ -407,6 +420,46 @@ export default function AdminBriefingsPage() {
     }
   };
 
+  const handleToggleFavorite = async (row: BriefingRow) => {
+    try {
+      setFavoriteLoadingId(row.id);
+      setError("");
+      setNotice("");
+
+      const res = await fetch(`/api/briefings/${row.id}/favorite`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          favorite: !row.isFavorite,
+        }),
+      });
+
+      const data = await parseJsonSafe(res);
+
+      if (!res.ok) {
+        throw new Error((data as any).error || "즐겨찾기 처리 실패");
+      }
+
+      setNotice(
+        !row.isFavorite
+          ? "브리핑을 즐겨찾기에 추가했습니다."
+          : "브리핑 즐겨찾기를 해제했습니다."
+      );
+
+      await loadBriefings();
+      if (selectedId === row.id) {
+        await loadBriefingDetail(row.id);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "브리핑 즐겨찾기 처리 중 오류가 발생했습니다.");
+    } finally {
+      setFavoriteLoadingId(null);
+    }
+  };
+
   useEffect(() => {
     loadBriefings();
   }, []);
@@ -423,7 +476,7 @@ export default function AdminBriefingsPage() {
       >
         <h1 style={{ marginBottom: "8px" }}>브리핑 관리자</h1>
         <p style={{ marginTop: 0, color: "#475569", lineHeight: 1.7 }}>
-          히스토리 검색, 상태 필터, 템플릿 전환 재발송, 구조화 요약 확인, 기사 미리보기까지 반영된 관리자 화면입니다.
+          히스토리 검색, 상태 필터, 템플릿 전환 재발송, 구조화 요약 확인, 기사 미리보기, 브리핑 즐겨찾기까지 반영된 관리자 화면입니다.
         </p>
 
         <div
@@ -466,7 +519,7 @@ export default function AdminBriefingsPage() {
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
                 gap: "10px",
-                marginBottom: "14px",
+                marginBottom: "10px",
               }}
             >
               <select
@@ -498,6 +551,23 @@ export default function AdminBriefingsPage() {
                 <option value="ALL">전체 템플릿</option>
                 <option value="EXECUTIVE">경영진용</option>
                 <option value="PRACTICAL">실무형</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom: "14px" }}>
+              <select
+                value={favoriteFilter}
+                onChange={(e) => setFavoriteFilter(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  borderRadius: "8px",
+                  border: "1px solid #d1d5db",
+                }}
+              >
+                <option value="ALL">전체 즐겨찾기 상태</option>
+                <option value="FAVORITE">즐겨찾기만</option>
+                <option value="NORMAL">일반만</option>
               </select>
             </div>
 
@@ -564,9 +634,30 @@ export default function AdminBriefingsPage() {
                           marginBottom: "6px",
                         }}
                       >
-                        <div style={{ fontWeight: 800, wordBreak: "break-word" }}>
-                          {item.query}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            minWidth: 0,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          {item.isFavorite && (
+                            <span
+                              style={{
+                                fontSize: "14px",
+                                lineHeight: 1,
+                              }}
+                            >
+                              ⭐
+                            </span>
+                          )}
+                          <div style={{ fontWeight: 800, wordBreak: "break-word" }}>
+                            {item.query}
+                          </div>
                         </div>
+
                         <StatusBadge status={item.status} />
                       </div>
 
@@ -621,6 +712,7 @@ export default function AdminBriefingsPage() {
                         display: "flex",
                         gap: "8px",
                         marginTop: "10px",
+                        flexWrap: "wrap",
                       }}
                     >
                       <button
@@ -637,6 +729,27 @@ export default function AdminBriefingsPage() {
                       >
                         {isSelected ? "선택됨" : "선택"}
                       </button>
+
+                      <button
+                        onClick={() => handleToggleFavorite(item)}
+                        disabled={favoriteLoadingId === item.id}
+                        style={{
+                          padding: "8px 10px",
+                          borderRadius: "8px",
+                          border: "1px solid #fcd34d",
+                          background: "#fffdf5",
+                          color: "#92400e",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                        }}
+                      >
+                        {favoriteLoadingId === item.id
+                          ? "처리 중..."
+                          : item.isFavorite
+                          ? "즐겨찾기 해제"
+                          : "즐겨찾기"}
+                      </button>
+
                       <button
                         onClick={() => handleDelete(item.id)}
                         disabled={deletingId === item.id}
@@ -751,9 +864,14 @@ export default function AdminBriefingsPage() {
                           marginTop: 0,
                           marginBottom: "8px",
                           wordBreak: "break-word",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          flexWrap: "wrap",
                         }}
                       >
-                        {selectedBriefing.query}
+                        {selectedBriefing.isFavorite && <span>⭐</span>}
+                        <span>{selectedBriefing.query}</span>
                       </h2>
 
                       <div
@@ -765,6 +883,27 @@ export default function AdminBriefingsPage() {
                         }}
                       >
                         <StatusBadge status={selectedBriefing.status} />
+
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 800,
+                            padding: "4px 8px",
+                            borderRadius: "999px",
+                            background:
+                              selectedBriefing.templateType === "PRACTICAL"
+                                ? "#ede9fe"
+                                : "#dbeafe",
+                            color:
+                              selectedBriefing.templateType === "PRACTICAL"
+                                ? "#6d28d9"
+                                : "#1d4ed8",
+                          }}
+                        >
+                          {selectedBriefing.templateType === "PRACTICAL"
+                            ? "실무형"
+                            : "경영진용"}
+                        </span>
 
                         <span
                           style={{
@@ -849,23 +988,51 @@ export default function AdminBriefingsPage() {
                         ))}
                       </div>
 
-                      <button
-                        onClick={handleResend}
-                        disabled={resendingId === selectedBriefing.id}
+                      <div
                         style={{
-                          padding: "12px 14px",
-                          borderRadius: "10px",
-                          border: "none",
-                          background: "#2563eb",
-                          color: "#fff",
-                          fontWeight: 800,
-                          cursor: "pointer",
+                          display: "flex",
+                          gap: "8px",
+                          flexWrap: "wrap",
                         }}
                       >
-                        {resendingId === selectedBriefing.id
-                          ? "재발송 중..."
-                          : "선택한 템플릿으로 재발송"}
-                      </button>
+                        <button
+                          onClick={handleResend}
+                          disabled={resendingId === selectedBriefing.id}
+                          style={{
+                            padding: "12px 14px",
+                            borderRadius: "10px",
+                            border: "none",
+                            background: "#2563eb",
+                            color: "#fff",
+                            fontWeight: 800,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {resendingId === selectedBriefing.id
+                            ? "재발송 중..."
+                            : "선택한 템플릿으로 재발송"}
+                        </button>
+
+                        <button
+                          onClick={() => handleToggleFavorite(selectedBriefing)}
+                          disabled={favoriteLoadingId === selectedBriefing.id}
+                          style={{
+                            padding: "12px 14px",
+                            borderRadius: "10px",
+                            border: "1px solid #fcd34d",
+                            background: "#fffdf5",
+                            color: "#92400e",
+                            fontWeight: 800,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {favoriteLoadingId === selectedBriefing.id
+                            ? "처리 중..."
+                            : selectedBriefing.isFavorite
+                            ? "즐겨찾기 해제"
+                            : "즐겨찾기 추가"}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
