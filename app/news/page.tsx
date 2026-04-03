@@ -2,6 +2,7 @@
 // (2026-03-27) : UI 업그레이드, AI 추천 기능 추가
 // (2026-03-30) : 검색 결과에 점수 정보 포함, 상위 20개 --> Gemini 재선별
 // (2026-04-02) : app/page.tsx : 메뉴 재구성 및 반응형 3단 레이아웃 적용
+// (2026-04-03) : 추천 키워드 고정(pin), 기사 원문 미리보기 모달, 브리핑 템플릿 2종
 
 "use client";
 
@@ -69,6 +70,8 @@ type StructuredSummary = {
   comment: string;
 };
 
+type BriefingTemplateType = "EXECUTIVE" | "PRACTICAL";
+
 const CATEGORY_OPTIONS = [
   "전체",
   "반도체",
@@ -79,6 +82,25 @@ const CATEGORY_OPTIONS = [
   "물류",
   "기타",
 ];
+
+const TEMPLATE_OPTIONS: Array<{
+  value: BriefingTemplateType;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "EXECUTIVE",
+    label: "경영진용 요약형",
+    description: "핵심 흐름과 시사점 중심의 압축 브리핑",
+  },
+  {
+    value: "PRACTICAL",
+    label: "실무자용 상세형",
+    description: "기사별 포인트와 실행 관점이 더 자세한 브리핑",
+  },
+];
+
+const PINNED_RECOMMENDATIONS_KEY = "news-briefing-pinned-recommendations";
 
 async function parseJsonSafe(res: Response) {
   const text = await res.text();
@@ -332,11 +354,14 @@ function SummarySectionCard(props: {
 export default function NewsPage() {
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("전체");
+  const [templateType, setTemplateType] =
+    useState<BriefingTemplateType>("EXECUTIVE");
 
   const [rawItems, setRawItems] = useState<SearchItem[]>([]);
   const [selectedItems, setSelectedItems] = useState<SearchItem[]>([]);
   const [summary, setSummary] = useState("");
-  const [structuredSummary, setStructuredSummary] = useState<StructuredSummary | null>(null);
+  const [structuredSummary, setStructuredSummary] =
+    useState<StructuredSummary | null>(null);
   const [briefingId, setBriefingId] = useState<number | null>(null);
   const [email, setEmail] = useState("");
 
@@ -346,8 +371,12 @@ export default function NewsPage() {
   const [selectedBriefingId, setSelectedBriefingId] = useState<number | null>(null);
 
   const [recommendations, setRecommendations] = useState<RecommendationItem[]>([]);
-  const [recommendationSource, setRecommendationSource] = useState<"AI" | "RULE" | "">("");
+  const [pinnedRecommendations, setPinnedRecommendations] = useState<string[]>([]);
+  const [recommendationSource, setRecommendationSource] =
+    useState<"AI" | "RULE" | "">("");
   const [recommendationLoading, setRecommendationLoading] = useState(false);
+
+  const [historyKeyword, setHistoryKeyword] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [reranking, setReranking] = useState(false);
@@ -357,13 +386,19 @@ export default function NewsPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [classifying, setClassifying] = useState(false);
   const [deletingBriefingId, setDeletingBriefingId] = useState<number | null>(null);
-  const [updatingSavedQueryId, setUpdatingSavedQueryId] = useState<number | null>(null);
+  const [updatingSavedQueryId, setUpdatingSavedQueryId] = useState<number | null>(
+    null
+  );
 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
   const [isMobileLayout, setIsMobileLayout] = useState(false);
-  const [activeMobileTab, setActiveMobileTab] = useState<"left" | "center" | "right">("center");
+  const [activeMobileTab, setActiveMobileTab] = useState<
+    "left" | "center" | "right"
+  >("center");
+
+  const [previewItem, setPreviewItem] = useState<SearchItem | null>(null);
 
   const preRankedItems = useMemo(() => {
     if (!rawItems.length) return [];
@@ -388,6 +423,31 @@ export default function NewsPage() {
     ).length;
   }, [savedQueries]);
 
+  const sortedRecommendations = useMemo(() => {
+    const pinnedSet = new Set(pinnedRecommendations);
+
+    const pinned = recommendations.filter((item) =>
+      pinnedSet.has(normalizeText(item.keyword))
+    );
+    const unpinned = recommendations.filter(
+      (item) => !pinnedSet.has(normalizeText(item.keyword))
+    );
+
+    return [...pinned, ...unpinned];
+  }, [recommendations, pinnedRecommendations]);
+
+  const filteredBriefings = useMemo(() => {
+    const keyword = normalizeText(historyKeyword);
+    if (!keyword) return briefings;
+
+    return briefings.filter((item) => {
+      const haystack = normalizeText(
+        `${item.query} ${item.summary} ${item.categoryTag || ""}`
+      );
+      return haystack.includes(keyword);
+    });
+  }, [briefings, historyKeyword]);
+
   useEffect(() => {
     const syncLayout = () => {
       const mobile = window.innerWidth <= 920;
@@ -401,6 +461,41 @@ export default function NewsPage() {
     window.addEventListener("resize", syncLayout);
     return () => window.removeEventListener("resize", syncLayout);
   }, []);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(PINNED_RECOMMENDATIONS_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setPinnedRecommendations(parsed);
+        }
+      }
+    } catch (error) {
+      console.error("PIN LOAD ERROR:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        PINNED_RECOMMENDATIONS_KEY,
+        JSON.stringify(pinnedRecommendations)
+      );
+    } catch (error) {
+      console.error("PIN SAVE ERROR:", error);
+    }
+  }, [pinnedRecommendations]);
+
+  const togglePinnedRecommendation = (keyword: string) => {
+    const normalized = normalizeText(keyword);
+
+    setPinnedRecommendations((prev) =>
+      prev.includes(normalized)
+        ? prev.filter((item) => item !== normalized)
+        : [normalized, ...prev]
+    );
+  };
 
   const loadSavedQueries = async () => {
     try {
@@ -452,6 +547,10 @@ export default function NewsPage() {
       const detail = ((data as any).data || data) as BriefingHistory;
       setSelectedBriefing({
         ...detail,
+        structured:
+          (data as any).structured ||
+          detail.structured ||
+          parseStructuredSummaryFromText(detail.summary),
         items: Array.isArray(detail?.items) ? detail.items : [],
       });
       setSelectedBriefingId(id);
@@ -553,7 +652,10 @@ export default function NewsPage() {
       const rerankData = await parseJsonSafe(rerankRes);
 
       if (!rerankRes.ok) {
-        console.error("rerank fallback:", (rerankData as any).error || "재선별 실패");
+        console.error(
+          "rerank fallback:",
+          (rerankData as any).error || "재선별 실패"
+        );
         setSelectedItems(preRanked.slice(0, 10));
         setNotice("Gemini 재선별에 실패하여 1차 후보 10개로 대체했습니다.");
       } else {
@@ -595,6 +697,7 @@ export default function NewsPage() {
           query,
           items: selectedItems,
           category: selectedCategory,
+          templateType,
         }),
       });
 
@@ -605,7 +708,8 @@ export default function NewsPage() {
       }
 
       const summaryText = (data as any).summary || "";
-      const structured = (data as any).structured || parseStructuredSummaryFromText(summaryText);
+      const structured =
+        (data as any).structured || parseStructuredSummaryFromText(summaryText);
 
       setSummary(summaryText);
       setStructuredSummary(structured);
@@ -642,6 +746,7 @@ export default function NewsPage() {
           query,
           briefingId,
           category: selectedCategory,
+          templateType,
         }),
       });
 
@@ -693,7 +798,9 @@ export default function NewsPage() {
         throw new Error((data as any).error || "키워드 저장 실패");
       }
 
-      setNotice(`키워드가 저장되었습니다. 카테고리: ${(data as any).category || "기타"}`);
+      setNotice(
+        `키워드가 저장되었습니다. 카테고리: ${(data as any).category || "기타"}`
+      );
       await loadSavedQueries();
       await loadRecommendations();
     } catch (err: any) {
@@ -720,7 +827,9 @@ export default function NewsPage() {
         throw new Error((data as any).error || "미분류 자동 분류 실패");
       }
 
-      setNotice(`${(data as any).count || 0}건의 미분류 키워드를 자동 분류했습니다.`);
+      setNotice(
+        `${(data as any).count || 0}건의 미분류 키워드를 자동 분류했습니다.`
+      );
       await loadSavedQueries();
       await loadRecommendations();
     } catch (err: any) {
@@ -802,7 +911,9 @@ export default function NewsPage() {
         throw new Error((data as any).error || "카테고리 수정 실패");
       }
 
-      setNotice(`"${item.name}" 카테고리를 ${nextCategory}(으)로 변경했습니다.`);
+      setNotice(
+        `"${item.name}" 카테고리를 ${nextCategory}(으)로 변경했습니다.`
+      );
       await loadSavedQueries();
       await loadRecommendations();
     } catch (err: any) {
@@ -983,7 +1094,7 @@ export default function NewsPage() {
           marginBottom: "20px",
         }}
       >
-        {recommendations.length === 0 && (
+        {sortedRecommendations.length === 0 && (
           <div
             style={{
               padding: "10px 12px",
@@ -997,66 +1108,87 @@ export default function NewsPage() {
           </div>
         )}
 
-        {recommendations.map((item, index) => (
-          <div
-            key={`${item.keyword}-${index}`}
-            style={{
-              border: "1px solid #dbeafe",
-              borderRadius: "12px",
-              padding: "10px 12px",
-              background: "#f8fbff",
-            }}
-          >
+        {sortedRecommendations.map((item, index) => {
+          const pinned = pinnedRecommendations.includes(normalizeText(item.keyword));
+
+          return (
             <div
+              key={`${item.keyword}-${index}`}
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: "8px",
-                marginBottom: "6px",
+                border: pinned ? "1px solid #93c5fd" : "1px solid #dbeafe",
+                borderRadius: "12px",
+                padding: "10px 12px",
+                background: pinned ? "#eff6ff" : "#f8fbff",
               }}
             >
               <div
                 style={{
-                  fontWeight: 700,
-                  fontSize: "13px",
-                  color: "#0f172a",
-                  lineHeight: 1.3,
-                  wordBreak: "break-word",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginBottom: "6px",
                 }}
               >
-                {item.keyword}
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: "13px",
+                    color: "#0f172a",
+                    lineHeight: 1.3,
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {item.keyword}
+                </div>
+
+                <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+                  <button
+                    onClick={() => togglePinnedRecommendation(item.keyword)}
+                    style={{
+                      padding: "5px 8px",
+                      borderRadius: "8px",
+                      border: pinned ? "1px solid #2563eb" : "1px solid #cbd5e1",
+                      background: pinned ? "#dbeafe" : "#fff",
+                      color: "#1e3a8a",
+                      cursor: "pointer",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {pinned ? "고정해제" : "고정"}
+                  </button>
+
+                  <button
+                    onClick={() => handleApplyRecommendation(item)}
+                    style={{
+                      padding: "5px 10px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: "#111827",
+                      color: "#fff",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                    }}
+                  >
+                    적용
+                  </button>
+                </div>
               </div>
 
-              <button
-                onClick={() => handleApplyRecommendation(item)}
+              <div
                 style={{
-                  padding: "5px 10px",
-                  borderRadius: "8px",
-                  border: "none",
-                  background: "#111827",
-                  color: "#fff",
-                  cursor: "pointer",
                   fontSize: "12px",
-                  flexShrink: 0,
+                  color: "#475569",
+                  lineHeight: 1.45,
+                  wordBreak: "keep-all",
                 }}
               >
-                적용
-              </button>
+                {item.reason}
+              </div>
             </div>
-
-            <div
-              style={{
-                fontSize: "12px",
-                color: "#475569",
-                lineHeight: 1.45,
-                wordBreak: "keep-all",
-              }}
-            >
-              {item.reason}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <h3>저장 키워드</h3>
@@ -1226,6 +1358,92 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
               boxSizing: "border-box",
             }}
           />
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobileLayout ? "1fr" : "1fr 1fr",
+            gap: "12px",
+            marginBottom: "12px",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: "13px",
+                fontWeight: 700,
+                color: "#334155",
+                marginBottom: "8px",
+              }}
+            >
+              브리핑 템플릿
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                flexWrap: "wrap",
+              }}
+            >
+              {TEMPLATE_OPTIONS.map((item) => (
+                <button
+                  key={item.value}
+                  onClick={() => setTemplateType(item.value)}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    border:
+                      templateType === item.value
+                        ? "1px solid #2563eb"
+                        : "1px solid #cbd5e1",
+                    background:
+                      templateType === item.value ? "#eff6ff" : "#ffffff",
+                    color: templateType === item.value ? "#1d4ed8" : "#334155",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <div style={{ fontSize: "13px" }}>{item.label}</div>
+                  <div
+                    style={{
+                      fontSize: "11px",
+                      marginTop: "4px",
+                      color:
+                        templateType === item.value ? "#1d4ed8" : "#64748b",
+                    }}
+                  >
+                    {item.description}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: "12px 14px",
+              borderRadius: "12px",
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              fontSize: "13px",
+              lineHeight: 1.7,
+              color: "#475569",
+            }}
+          >
+            현재 선택:
+            <strong style={{ marginLeft: "6px", color: "#0f172a" }}>
+              {
+                TEMPLATE_OPTIONS.find((item) => item.value === templateType)
+                  ?.label
+              }
+            </strong>
+            <br />
+            {templateType === "EXECUTIVE"
+              ? "핵심 흐름, 시사점, 결정 포인트 중심으로 압축된 브리핑을 만듭니다."
+              : "기사별 포인트와 실무 관점 설명이 더 자세한 브리핑을 만듭니다."}
+          </div>
         </div>
 
         <div
@@ -1435,7 +1653,9 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
                   ))}
                 </ul>
               ) : (
-                <div style={{ fontSize: "14px", color: "#64748b" }}>내용이 없습니다.</div>
+                <div style={{ fontSize: "14px", color: "#64748b" }}>
+                  내용이 없습니다.
+                </div>
               )}
             </SummarySectionCard>
 
@@ -1579,6 +1799,48 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
             )}
 
             {item.snippet && <p style={{ margin: 0, lineHeight: 1.7 }}>{item.snippet}</p>}
+
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                marginTop: "12px",
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                onClick={() => setPreviewItem(item)}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #d1d5db",
+                  background: "#fff",
+                  color: "#111827",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                }}
+              >
+                미리보기
+              </button>
+
+              <a
+                href={item.link}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  background: "#111827",
+                  color: "#fff",
+                  textDecoration: "none",
+                  fontSize: "12px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                }}
+              >
+                원문 열기
+              </a>
+            </div>
           </div>
         ))}
       </div>
@@ -1599,6 +1861,20 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
     >
       <h3 style={{ marginTop: 0 }}>브리핑 히스토리</h3>
 
+      <input
+        value={historyKeyword}
+        onChange={(e) => setHistoryKeyword(e.target.value)}
+        placeholder="히스토리 검색"
+        style={{
+          width: "100%",
+          padding: "10px 12px",
+          borderRadius: "8px",
+          border: "1px solid #d1d5db",
+          marginBottom: "14px",
+          boxSizing: "border-box",
+        }}
+      />
+
       {historyLoading && (
         <div
           style={{
@@ -1613,7 +1889,7 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
         </div>
       )}
 
-      {!historyLoading && briefings.length === 0 && (
+      {!historyLoading && filteredBriefings.length === 0 && (
         <div
           style={{
             padding: "12px",
@@ -1623,12 +1899,12 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
             fontSize: "14px",
           }}
         >
-          저장된 브리핑이 없습니다.
+          검색 결과가 없습니다.
         </div>
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        {briefings.map((item) => {
+        {filteredBriefings.map((item) => {
           const isSelected = selectedBriefingId === item.id;
 
           return (
@@ -1740,19 +2016,49 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
             </div>
           )}
 
-          <pre
-            style={{
-              whiteSpace: "pre-wrap",
-              marginTop: "12px",
-              fontSize: "13px",
-              lineHeight: 1.6,
-              background: "#f8fafc",
-              padding: "10px",
-              borderRadius: "10px",
-            }}
-          >
-            {selectedBriefing.summary}
-          </pre>
+          {selectedBriefing.structured ? (
+            <div style={{ marginTop: "12px", display: "grid", gap: "10px" }}>
+              <SummarySectionCard
+                title="오늘의 핵심 동향"
+                background="#e0f2fe"
+                borderColor="#7dd3fc"
+                titleColor="#0f172a"
+              >
+                <div style={{ fontSize: "13px", lineHeight: 1.7 }}>
+                  {selectedBriefing.structured.trend}
+                </div>
+              </SummarySectionCard>
+
+              <SummarySectionCard
+                title="핵심 포인트"
+                background="#ffffff"
+                borderColor="#dbeafe"
+                titleColor="#2563eb"
+              >
+                <ul style={{ margin: 0, paddingLeft: "18px" }}>
+                  {selectedBriefing.structured.keyPoints.map((point, index) => (
+                    <li key={`${index}-${point}`} style={{ marginBottom: "6px", fontSize: "13px", lineHeight: 1.7 }}>
+                      {point}
+                    </li>
+                  ))}
+                </ul>
+              </SummarySectionCard>
+            </div>
+          ) : (
+            <pre
+              style={{
+                whiteSpace: "pre-wrap",
+                marginTop: "12px",
+                fontSize: "13px",
+                lineHeight: 1.6,
+                background: "#f8fafc",
+                padding: "10px",
+                borderRadius: "10px",
+              }}
+            >
+              {selectedBriefing.summary}
+            </pre>
+          )}
 
           <div style={{ marginTop: "12px", fontWeight: 700 }}>기사 목록</div>
 
@@ -1802,95 +2108,234 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
   );
 
   return (
-    <main
-      style={{
-        maxWidth: "1400px",
-        margin: "0 auto",
-        padding: isMobileLayout ? "18px 14px 32px" : "24px 20px 40px",
-        fontFamily: "Arial, sans-serif",
-      }}
-    >
-      <h1 style={{ marginBottom: "8px", fontSize: isMobileLayout ? "28px" : "32px" }}>
-        뉴스 브리핑
-      </h1>
-      <p style={{ marginTop: 0, color: "#475569", lineHeight: 1.7 }}>
-        3단계 랭킹 알고리즘(TF-IDF + 중복 제거 + 중요도 scoring)까지 반영된 최종본입니다.
-      </p>
+    <>
+      <main
+        style={{
+          maxWidth: "1400px",
+          margin: "0 auto",
+          padding: isMobileLayout ? "18px 14px 32px" : "24px 20px 40px",
+          fontFamily: "Arial, sans-serif",
+        }}
+      >
+        <h1 style={{ marginBottom: "8px", fontSize: isMobileLayout ? "28px" : "32px" }}>
+          뉴스 브리핑
+        </h1>
+        <p style={{ marginTop: 0, color: "#475569", lineHeight: 1.7 }}>
+          중복 제거 강화, 템플릿 분기, 히스토리 검색, 추천 키워드 고정, 기사 미리보기까지 반영된 버전입니다.
+        </p>
 
-      {isMobileLayout ? (
-        <>
+        {isMobileLayout ? (
+          <>
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                marginBottom: "16px",
+              }}
+            >
+              <button
+                onClick={() => setActiveMobileTab("left")}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: "999px",
+                  border: activeMobileTab === "left" ? "none" : "1px solid #cbd5e1",
+                  background: activeMobileTab === "left" ? "#2563eb" : "#fff",
+                  color: activeMobileTab === "left" ? "#fff" : "#334155",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                추천
+              </button>
+              <button
+                onClick={() => setActiveMobileTab("center")}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: "999px",
+                  border: activeMobileTab === "center" ? "none" : "1px solid #cbd5e1",
+                  background: activeMobileTab === "center" ? "#2563eb" : "#fff",
+                  color: activeMobileTab === "center" ? "#fff" : "#334155",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                검색
+              </button>
+              <button
+                onClick={() => setActiveMobileTab("right")}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: "999px",
+                  border: activeMobileTab === "right" ? "none" : "1px solid #cbd5e1",
+                  background: activeMobileTab === "right" ? "#2563eb" : "#fff",
+                  color: activeMobileTab === "right" ? "#fff" : "#334155",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                히스토리
+              </button>
+            </div>
+
+            {activeMobileTab === "left" && leftPanel}
+            {activeMobileTab === "center" && centerPanel}
+            {activeMobileTab === "right" && rightPanel}
+          </>
+        ) : (
           <div
             style={{
-              display: "flex",
-              gap: "8px",
-              marginBottom: "16px",
+              display: "grid",
+              gridTemplateColumns: "280px minmax(0, 1fr) 360px",
+              gap: "20px",
+              alignItems: "start",
             }}
           >
-            <button
-              onClick={() => setActiveMobileTab("left")}
-              style={{
-                flex: 1,
-                padding: "10px 12px",
-                borderRadius: "999px",
-                border: activeMobileTab === "left" ? "none" : "1px solid #cbd5e1",
-                background: activeMobileTab === "left" ? "#2563eb" : "#fff",
-                color: activeMobileTab === "left" ? "#fff" : "#334155",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              추천
-            </button>
-            <button
-              onClick={() => setActiveMobileTab("center")}
-              style={{
-                flex: 1,
-                padding: "10px 12px",
-                borderRadius: "999px",
-                border: activeMobileTab === "center" ? "none" : "1px solid #cbd5e1",
-                background: activeMobileTab === "center" ? "#2563eb" : "#fff",
-                color: activeMobileTab === "center" ? "#fff" : "#334155",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              검색
-            </button>
-            <button
-              onClick={() => setActiveMobileTab("right")}
-              style={{
-                flex: 1,
-                padding: "10px 12px",
-                borderRadius: "999px",
-                border: activeMobileTab === "right" ? "none" : "1px solid #cbd5e1",
-                background: activeMobileTab === "right" ? "#2563eb" : "#fff",
-                color: activeMobileTab === "right" ? "#fff" : "#334155",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              히스토리
-            </button>
+            <div style={{ position: "sticky", top: "16px" }}>{leftPanel}</div>
+            {centerPanel}
+            <div style={{ position: "sticky", top: "16px" }}>{rightPanel}</div>
           </div>
+        )}
+      </main>
 
-          {activeMobileTab === "left" && leftPanel}
-          {activeMobileTab === "center" && centerPanel}
-          {activeMobileTab === "right" && rightPanel}
-        </>
-      ) : (
+      {previewItem && (
         <div
+          onClick={() => setPreviewItem(null)}
           style={{
-            display: "grid",
-            gridTemplateColumns: "280px minmax(0, 1fr) 360px",
-            gap: "20px",
-            alignItems: "start",
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+            zIndex: 9999,
           }}
         >
-          <div style={{ position: "sticky", top: "16px" }}>{leftPanel}</div>
-          {centerPanel}
-          <div style={{ position: "sticky", top: "16px" }}>{rightPanel}</div>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "760px",
+              background: "#ffffff",
+              borderRadius: "18px",
+              padding: "24px",
+              boxShadow: "0 20px 50px rgba(0,0,0,0.18)",
+              maxHeight: "85vh",
+              overflow: "auto",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: "12px",
+                marginBottom: "14px",
+                alignItems: "flex-start",
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: "22px",
+                    fontWeight: 800,
+                    color: "#0f172a",
+                    lineHeight: 1.5,
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {previewItem.title}
+                </div>
+                <div
+                  style={{
+                    marginTop: "6px",
+                    fontSize: "13px",
+                    color: "#64748b",
+                  }}
+                >
+                  {previewItem.pubDate}
+                  {previewItem.sourceDomain ? ` · ${previewItem.sourceDomain}` : ""}
+                </div>
+              </div>
+
+              <button
+                onClick={() => setPreviewItem(null)}
+                style={{
+                  border: "none",
+                  background: "#f1f5f9",
+                  color: "#0f172a",
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "50%",
+                  cursor: "pointer",
+                  fontSize: "18px",
+                  fontWeight: 700,
+                  flexShrink: 0,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                padding: "16px",
+                borderRadius: "12px",
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                fontSize: "15px",
+                lineHeight: 1.9,
+                color: "#334155",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {previewItem.snippet || "미리보기 가능한 요약 내용이 없습니다."}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                marginTop: "16px",
+                flexWrap: "wrap",
+              }}
+            >
+              <a
+                href={previewItem.link}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  background: "#111827",
+                  color: "#fff",
+                  textDecoration: "none",
+                  fontWeight: 700,
+                }}
+              >
+                원문 열기
+              </a>
+
+              <button
+                onClick={() => setPreviewItem(null)}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  border: "1px solid #cbd5e1",
+                  background: "#ffffff",
+                  color: "#334155",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                닫기
+              </button>
+            </div>
+          </div>
         </div>
       )}
-    </main>
+    </>
   );
 }

@@ -1,5 +1,6 @@
 // app/api/send/route.ts - HTML 카드형 메일 발송 + Briefing sentTo / sentAT 업데이트 포함
-// 2026-03-27 : 카테고리 선택값 반영 
+// (2026-03-27) : 카테고리 선택값 반영 
+// (2026-04-03) : 메일 발송 시 경영진용 요약형 / 실무자용 상세형 둘 다 템플릿 반영
 
 import { prisma } from "@/lib/prisma";
 import { sendMail } from "@/lib/gmail";
@@ -22,6 +23,8 @@ type StructuredSummary = {
   comment: string;
 };
 
+type BriefingTemplateType = "EXECUTIVE" | "PRACTICAL";
+
 function escapeHtml(value: string) {
   return String(value || "")
     .replaceAll("&", "&amp;")
@@ -40,22 +43,25 @@ function buildFallbackStructured(summary: string): StructuredSummary {
   };
 }
 
-function buildMailSubject(query: string) {
+function buildMailSubject(query: string, templateType: BriefingTemplateType) {
   const first = query
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean)[0] || "뉴스";
 
-  return `[${first.length > 24 ? `${first.slice(0, 24)}...` : first}] 브리핑`;
+  const label = templateType === "PRACTICAL" ? "실무형" : "경영진용";
+  return `[${first.length > 24 ? `${first.slice(0, 24)}...` : first}] 브리핑 (${label})`;
 }
 
 function buildMailHtml(input: {
   query: string;
   structured: StructuredSummary;
   items: SearchItem[];
+  templateType: BriefingTemplateType;
 }) {
   const topItems = input.items.slice(0, 3);
-  const otherItems = input.items.slice(3);
+  const otherItems =
+    input.templateType === "PRACTICAL" ? input.items.slice(3) : input.items.slice(3, 6);
 
   return `
     <div style="background:#f3f4f6;padding:24px;font-family:Arial,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;">
@@ -64,6 +70,9 @@ function buildMailHtml(input: {
           <td style="background:#0f172a;border-radius:18px;padding:26px 24px 22px 24px;">
             <div style="font-size:28px;font-weight:800;color:#ffffff;margin-bottom:8px;">브리핑</div>
             <div style="font-size:13px;color:#cbd5e1;">${escapeHtml(input.query)}</div>
+            <div style="font-size:12px;color:#93c5fd;margin-top:6px;">
+              ${input.templateType === "PRACTICAL" ? "실무자용 상세형" : "경영진용 요약형"}
+            </div>
           </td>
         </tr>
 
@@ -161,17 +170,30 @@ function buildMailHtml(input: {
 
         <tr>
           <td>
-            <div style="font-size:18px;font-weight:800;color:#475569;margin-bottom:12px;">그 외 기사</div>
+            <div style="font-size:18px;font-weight:800;color:#475569;margin-bottom:12px;">
+              ${input.templateType === "PRACTICAL" ? "추가 확인 기사" : "그 외 기사"}
+            </div>
             ${otherItems
               .map(
                 (item, index) => `
                   <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:14px 16px;margin-bottom:10px;">
-                    <div style="font-size:13px;color:#64748b;font-weight:700;margin-bottom:6px;">기사 ${index + 4}</div>
-                    <div style="font-size:14px;font-weight:700;line-height:1.6;color:#111827;">
+                    <div style="font-size:13px;color:#64748b;font-weight:700;margin-bottom:6px;">
+                      기사 ${index + 4}
+                    </div>
+                    <div style="font-size:14px;font-weight:700;line-height:1.6;color:#111827;margin-bottom:6px;">
                       <a href="${escapeHtml(item.link)}" target="_blank" style="color:#111827;text-decoration:none;">
                         ${escapeHtml(item.title)}
                       </a>
                     </div>
+                    ${
+                      input.templateType === "PRACTICAL"
+                        ? `
+                    <div style="font-size:13px;line-height:1.8;color:#475569;">
+                      ${escapeHtml(item.snippet || "")}
+                    </div>
+                    `
+                        : ""
+                    }
                   </div>
                 `
               )
@@ -196,6 +218,12 @@ export async function POST(request: Request) {
     const items = Array.isArray(body?.items) ? (body.items as SearchItem[]) : [];
     const query = String(body?.query || "").trim();
     const briefingId = body?.briefingId ? Number(body.briefingId) : null;
+    const templateType = (
+      String(body?.templateType || "EXECUTIVE").trim().toUpperCase() ===
+      "PRACTICAL"
+        ? "PRACTICAL"
+        : "EXECUTIVE"
+    ) as BriefingTemplateType;
 
     if (!to) {
       return Response.json({ error: "받는 이메일이 없습니다." }, { status: 400 });
@@ -213,11 +241,12 @@ export async function POST(request: Request) {
       query,
       structured,
       items,
+      templateType,
     });
 
     await sendMail({
       to,
-      subject: buildMailSubject(query),
+      subject: buildMailSubject(query, templateType),
       html,
     });
 

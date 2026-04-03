@@ -1,5 +1,6 @@
 // (2026-04-01) lib/briefing-runner.ts
 // (2026-04-02) 중복 기사 제거 + 구조화된 Gemini 브리핑 + 메일 품질 개선
+// (2026-04-03) 브리핑 템플릿 2종 적용 (경영진용 요약형 / 실무자용 상세형)
 
 import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/prisma";
@@ -22,6 +23,8 @@ type StructuredBriefing = {
   companyInsight: string;
   comment: string;
 };
+
+type BriefingTemplateType = "EXECUTIVE" | "PRACTICAL";
 
 type RunDailyBriefingResult = {
   ok: boolean;
@@ -118,20 +121,6 @@ function getKstStartOfDay(date = new Date()) {
 
 function getRecentWindowStart(hours: number) {
   return new Date(Date.now() - hours * 60 * 60 * 1000);
-}
-
-function buildFallbackStructuredBriefing(input: {
-  queries: string[];
-  newsList: CandidateNews[];
-}): StructuredBriefing {
-  return {
-    trend: `${input.queries.slice(0, 3).join(", ")} 중심으로 최근 기사 흐름을 보면, 주요 이슈가 반복적으로 수렴되며 기업 관점에서 추적할 포인트가 뚜렷해지고 있습니다.`,
-    keyPoints: input.newsList.slice(0, 5).map((item) => item.title),
-    companyInsight:
-      "기업 관점에서는 단순한 기사 수보다 실제 투자, 공급망, 실적, 정책 변화와 연결되는 핵심 기사를 중심으로 판단하는 것이 중요합니다.",
-    comment:
-      "유사 기사 반복이 많을수록 핵심 기사 선별과 중복 제거의 중요성이 커집니다.",
-  };
 }
 
 function collectQueryCandidates(rows: Array<{ query: string }>, limit: number) {
@@ -272,7 +261,37 @@ function deduplicateAndRankNews(newsList: CandidateNews[], queries: string[]) {
   return uniqueNews.sort((a, b) => b.finalScore - a.finalScore);
 }
 
-function buildMailSubject(queryText: string, isResend = false) {
+function buildFallbackStructuredBriefing(input: {
+  queries: string[];
+  newsList: CandidateNews[];
+  templateType: BriefingTemplateType;
+}): StructuredBriefing {
+  if (input.templateType === "PRACTICAL") {
+    return {
+      trend: `${input.queries.slice(0, 3).join(", ")} 중심 기사들을 보면 최근 이슈가 반복적으로 수렴되고 있으며, 실무적으로 확인할 운영 영향 포인트가 드러나고 있습니다.`,
+      keyPoints: input.newsList.slice(0, 5).map((item) => item.title),
+      companyInsight:
+        "실무 관점에서는 공급망, 투자, 실적, 생산 확대, 협력 구조 변화가 실제 운영 이슈와 연결되는지 점검하는 것이 중요합니다.",
+      comment:
+        "중복 기사 제거 후 핵심 기사 기준으로 후속 검토 우선순위를 정하는 방식이 효율적입니다.",
+    };
+  }
+
+  return {
+    trend: `${input.queries.slice(0, 3).join(", ")} 중심으로 최근 기사 흐름을 보면, 주요 이슈가 반복적으로 수렴되며 기업 관점에서 추적할 포인트가 뚜렷해지고 있습니다.`,
+    keyPoints: input.newsList.slice(0, 3).map((item) => item.title),
+    companyInsight:
+      "기업 관점에서는 단순한 기사 수보다 실제 투자, 공급망, 실적, 정책 변화와 연결되는 핵심 기사를 중심으로 판단하는 것이 중요합니다.",
+    comment:
+      "유사 기사 반복이 많을수록 핵심 기사 선별과 중복 제거의 중요성이 커집니다.",
+  };
+}
+
+function buildMailSubject(
+  queryText: string,
+  templateType: BriefingTemplateType,
+  isResend = false
+) {
   const firstKeyword =
     queryText
       .split(",")
@@ -282,9 +301,11 @@ function buildMailSubject(queryText: string, isResend = false) {
   const compactKeyword =
     firstKeyword.length > 24 ? `${firstKeyword.slice(0, 24)}...` : firstKeyword;
 
+  const label = templateType === "PRACTICAL" ? "실무형" : "경영진용";
+
   return isResend
-    ? `[${compactKeyword}] 브리핑 [재발송]`
-    : `[${compactKeyword}] 브리핑`;
+    ? `[${compactKeyword}] 브리핑 (${label}) [재발송]`
+    : `[${compactKeyword}] 브리핑 (${label})`;
 }
 
 function buildMailHtml(input: {
@@ -298,9 +319,11 @@ function buildMailHtml(input: {
     sourceQuery: string | null;
     createdAt: Date;
   }>;
+  templateType: BriefingTemplateType;
 }) {
   const topItems = input.items.slice(0, 3);
-  const otherItems = input.items.slice(3);
+  const otherItems =
+    input.templateType === "PRACTICAL" ? input.items.slice(3) : input.items.slice(3, 6);
 
   const keyPointsHtml = input.structured.keyPoints
     .map(
@@ -345,6 +368,15 @@ function buildMailHtml(input: {
               ${escapeHtml(item.title)}
             </a>
           </div>
+          ${
+            input.templateType === "PRACTICAL"
+              ? `
+          <div style="font-size:13px;line-height:1.8;color:#475569;margin-top:6px;">
+            ${escapeHtml(item.summary)}
+          </div>
+          `
+              : ""
+          }
         </div>
       `
     )
@@ -357,6 +389,9 @@ function buildMailHtml(input: {
           <td style="background:#0f172a;border-radius:18px;padding:26px 24px 22px 24px;">
             <div style="font-size:28px;font-weight:800;color:#ffffff;margin-bottom:8px;">브리핑</div>
             <div style="font-size:12px;color:#cbd5e1;">${escapeHtml(input.scheduledDateLabel)} 오전 브리핑</div>
+            <div style="font-size:12px;color:#93c5fd;margin-top:6px;">
+              ${input.templateType === "PRACTICAL" ? "실무자용 상세형" : "경영진용 요약형"}
+            </div>
           </td>
         </tr>
 
@@ -425,7 +460,9 @@ function buildMailHtml(input: {
 
         <tr>
           <td>
-            <div style="font-size:18px;font-weight:800;color:#475569;margin-bottom:12px;">그 외 기사</div>
+            <div style="font-size:18px;font-weight:800;color:#475569;margin-bottom:12px;">
+              ${input.templateType === "PRACTICAL" ? "추가 확인 기사" : "그 외 기사"}
+            </div>
             ${otherItemsHtml}
           </td>
         </tr>
@@ -517,6 +554,7 @@ async function generateStructuredBriefing(input: {
   queries: string[];
   newsList: CandidateNews[];
   summaries: { id: number; summary: string }[];
+  templateType: BriefingTemplateType;
 }) {
   const { GEMINI_API_KEY } = getBriefingEnv();
 
@@ -527,10 +565,12 @@ async function generateStructuredBriefing(input: {
   try {
     const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
-    const prompt = `
-너는 기업용 뉴스 브리핑 분석가다.
+    const prompt =
+      input.templateType === "PRACTICAL"
+        ? `
+너는 실무자용 뉴스 브리핑 분석가다.
 아래 기사들을 종합해서 구조화된 브리핑을 작성해라.
-개별 기사 나열이 아니라 전체 흐름을 정리해라.
+개별 기사 나열이 아니라 실무 관점 설명이 포함되어야 한다.
 반드시 JSON만 반환한다.
 
 형식:
@@ -543,11 +583,54 @@ async function generateStructuredBriefing(input: {
 
 조건:
 1. trend는 2~3문장
-2. keyPoints는 3~5개
-3. 중복되는 이슈는 하나의 흐름으로 묶기
-4. 투자, 공급망, 실적, 정책, 협력, 생산 변화 우선
-5. 과장 금지
-6. 한국어
+2. keyPoints는 4~5개
+3. keyPoints는 실무 관점에서 좀 더 구체적으로
+4. companyInsight는 운영/실행 영향 중심
+5. comment는 후속 검토 포인트 중심
+6. 중복되는 이슈는 하나의 흐름으로 묶기
+7. 과장 금지
+8. 한국어
+
+검색어:
+${input.queries.join(", ")}
+
+기사 목록:
+${input.newsList
+  .map((item) => {
+    const summary =
+      input.summaries.find((row) => row.id === item.id)?.summary ||
+      item.snippet ||
+      item.title;
+
+    return `
+제목: ${item.title}
+요약: ${summary}
+`;
+  })
+  .join("\n")}
+`
+        : `
+너는 경영진용 뉴스 브리핑 분석가다.
+아래 기사들을 종합해서 구조화된 브리핑을 작성해라.
+개별 기사 나열이 아니라 전체 흐름과 시사점을 압축적으로 정리해라.
+반드시 JSON만 반환한다.
+
+형식:
+{
+  "trend": "오늘의 핵심 동향",
+  "keyPoints": ["포인트1", "포인트2", "포인트3"],
+  "companyInsight": "기업 관점 요약",
+  "comment": "마지막 코멘트"
+}
+
+조건:
+1. trend는 2~3문장
+2. keyPoints는 3개
+3. companyInsight는 의사결정 포인트 중심
+4. comment는 시사점 중심
+5. 중복되는 이슈는 하나의 흐름으로 묶기
+6. 과장 금지
+7. 한국어
 
 검색어:
 ${input.queries.join(", ")}
@@ -584,7 +667,10 @@ ${input.newsList
 
     return {
       trend: parsed.trend,
-      keyPoints: parsed.keyPoints.slice(0, 5),
+      keyPoints:
+        input.templateType === "PRACTICAL"
+          ? parsed.keyPoints.slice(0, 5)
+          : parsed.keyPoints.slice(0, 3),
       companyInsight: parsed.companyInsight || "",
       comment: parsed.comment || "",
     };
@@ -603,12 +689,14 @@ async function buildBriefingMailPayload(input: {
   queries: string[];
   newsList: CandidateNews[];
   scheduledDateLabel: string;
+  templateType: BriefingTemplateType;
 }) {
   const summaries = await summarizePerNews(input.newsList);
   const structured = await generateStructuredBriefing({
     queries: input.queries,
     newsList: input.newsList,
     summaries,
+    templateType: input.templateType,
   });
 
   const summaryMap = new Map(summaries.map((row) => [row.id, row.summary]));
@@ -616,6 +704,7 @@ async function buildBriefingMailPayload(input: {
   const html = buildMailHtml({
     scheduledDateLabel: input.scheduledDateLabel,
     structured,
+    templateType: input.templateType,
     items: input.newsList.map((item, index) => ({
       rank: index + 1,
       title: item.title,
@@ -643,6 +732,7 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
   const { BRIEFING_TO_EMAIL, BRIEFING_MAX_NEWS, BRIEFING_MAX_QUERIES } =
     getBriefingEnv();
 
+  const templateType: BriefingTemplateType = "EXECUTIVE";
   const scheduledDate = getKstStartOfDay();
   const scheduledDateLabel = getKstDayKey();
 
@@ -774,6 +864,7 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
     queries: queryCandidates,
     newsList: finalNews,
     scheduledDateLabel,
+    templateType,
   });
 
   const briefing = existing
@@ -782,7 +873,7 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
         data: {
           query: briefingQueryText,
           summary: overallSummary,
-          categoryTag: "DAILY_AUTO",
+          categoryTag: `DAILY_AUTO_${templateType}`,
           sentTo: BRIEFING_TO_EMAIL,
           status: "PENDING",
           errorMessage: null,
@@ -793,7 +884,7 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
         data: {
           query: briefingQueryText,
           summary: overallSummary,
-          categoryTag: "DAILY_AUTO",
+          categoryTag: `DAILY_AUTO_${templateType}`,
           sentTo: BRIEFING_TO_EMAIL,
           status: "PENDING",
           scheduledDate,
@@ -817,7 +908,7 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
   try {
     await sendMail({
       to: BRIEFING_TO_EMAIL,
-      subject: buildMailSubject(briefingQueryText, false),
+      subject: buildMailSubject(briefingQueryText, templateType, false),
       html,
     });
 
@@ -861,7 +952,9 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
   }
 }
 
-export async function resendBriefing(briefingId: number): Promise<ResendBriefingResult> {
+export async function resendBriefing(
+  briefingId: number
+): Promise<ResendBriefingResult> {
   const { BRIEFING_TO_EMAIL } = getBriefingEnv();
 
   const briefing = await prisma.briefing.findUnique({
@@ -909,18 +1002,24 @@ export async function resendBriefing(briefingId: number): Promise<ResendBriefing
     .map((item) => item.trim())
     .filter(Boolean);
 
-  const scheduledDateLabel = getKstDayKey(briefing.scheduledDate || briefing.createdAt);
+  const templateType: BriefingTemplateType =
+    briefing.categoryTag?.includes("PRACTICAL") ? "PRACTICAL" : "EXECUTIVE";
+
+  const scheduledDateLabel = getKstDayKey(
+    briefing.scheduledDate || briefing.createdAt
+  );
 
   const { overallSummary, html } = await buildBriefingMailPayload({
     queries: queryCandidates,
     newsList,
     scheduledDateLabel,
+    templateType,
   });
 
   try {
     await sendMail({
       to: BRIEFING_TO_EMAIL,
-      subject: buildMailSubject(briefing.query, true),
+      subject: buildMailSubject(briefing.query, templateType, true),
       html,
     });
 
