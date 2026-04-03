@@ -1,4 +1,5 @@
 // app/api/briefings/[id]/route.ts
+// (2026-04-03) : 브리핑 상세 구조화 요약 카드 표시
 
 import { prisma } from "@/lib/prisma";
 
@@ -11,7 +12,75 @@ type RouteContext = {
   }>;
 };
 
-function buildDetailResponse(briefing: {
+function parseStructuredSummaryFromText(text: string) {
+  const raw = String(text || "").trim();
+
+  if (!raw) {
+    return {
+      trend: "",
+      keyPoints: [],
+      companyInsight: "",
+      comment: "",
+    };
+  }
+
+  const lines = raw
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  let trend = "";
+  let companyInsight = "";
+  let comment = "";
+  const keyPoints: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith("오늘의 핵심 동향")) {
+      trend = line.replace(/^오늘의 핵심 동향[:：]?\s*/u, "").trim();
+      continue;
+    }
+
+    if (line.startsWith("핵심 포인트")) {
+      const cleaned = line.replace(/^핵심 포인트[:：]?\s*/u, "").trim();
+      if (cleaned) keyPoints.push(cleaned);
+      continue;
+    }
+
+    if (line.startsWith("- ")) {
+      keyPoints.push(line.replace(/^- /, "").trim());
+      continue;
+    }
+
+    if (line.startsWith("기업 관점")) {
+      companyInsight = line.replace(/^기업 관점[:：]?\s*/u, "").trim();
+      continue;
+    }
+
+    if (line.startsWith("마지막 코멘트")) {
+      comment = line.replace(/^마지막 코멘트[:：]?\s*/u, "").trim();
+      continue;
+    }
+  }
+
+  if (!trend) {
+    trend = lines[0] || "";
+  }
+
+  return {
+    trend,
+    keyPoints: keyPoints.slice(0, 5),
+    companyInsight,
+    comment,
+  };
+}
+
+function inferTemplateType(categoryTag?: string | null) {
+  if (String(categoryTag || "").includes("PRACTICAL")) return "PRACTICAL";
+  return "EXECUTIVE";
+}
+
+type DetailShape = {
   id: number;
   query: string;
   summary: string;
@@ -19,7 +88,7 @@ function buildDetailResponse(briefing: {
   sentTo: string | null;
   sentAt: Date | null;
   scheduledDate: Date | null;
-  status: string;
+  status: string | null;
   errorMessage: string | null;
   createdAt: Date;
   items: Array<{
@@ -36,7 +105,9 @@ function buildDetailResponse(briefing: {
       createdAt: Date;
     };
   }>;
-}) {
+};
+
+function buildDetailResponse(briefing: DetailShape) {
   const normalizedItems = Array.isArray(briefing.items)
     ? briefing.items.map((item) => ({
         id: item.id,
@@ -65,13 +136,13 @@ function buildDetailResponse(briefing: {
     status: briefing.status,
     errorMessage: briefing.errorMessage,
     createdAt: briefing.createdAt,
+    templateType: inferTemplateType(briefing.categoryTag),
+    structured: parseStructuredSummaryFromText(briefing.summary),
     items: normalizedItems,
   };
 
   return {
     data: normalized,
-
-    // 기존 화면 하위 호환
     id: normalized.id,
     query: normalized.query,
     summary: normalized.summary,
@@ -82,6 +153,8 @@ function buildDetailResponse(briefing: {
     status: normalized.status,
     errorMessage: normalized.errorMessage,
     createdAt: normalized.createdAt,
+    templateType: normalized.templateType,
+    structured: normalized.structured,
     items: normalized.items,
   };
 }
@@ -145,11 +218,6 @@ export async function DELETE(_: Request, context: RouteContext) {
     const params = await context.params;
     const briefingId = Number(params.id);
 
-    console.log("BRIEFING DELETE REQUEST:", {
-      rawId: params.id,
-      briefingId,
-    });
-
     if (!Number.isFinite(briefingId)) {
       return Response.json(
         {
@@ -188,8 +256,6 @@ export async function DELETE(_: Request, context: RouteContext) {
         },
       });
     });
-
-    console.log("BRIEFING DELETE SUCCESS:", { briefingId });
 
     return Response.json({
       ok: true,

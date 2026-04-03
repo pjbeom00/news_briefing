@@ -1,4 +1,5 @@
 // app/api/briefings/[id]/resend/route.ts
+// (2026-04-03) : 메일 재발송 시 템플릿 변경 기능 추가
 
 import { resendBriefing } from "@/lib/briefing-runner";
 
@@ -11,7 +12,7 @@ type RouteContext = {
   }>;
 };
 
-export async function POST(_: Request, context: RouteContext) {
+export async function POST(request: Request, context: RouteContext) {
   try {
     const params = await context.params;
     const briefingId = Number(params.id);
@@ -25,10 +26,24 @@ export async function POST(_: Request, context: RouteContext) {
       );
     }
 
-    const result = await resendBriefing(briefingId);
+    const body = await request.json().catch(() => ({}));
+    const templateType = String(body?.templateType || "EXECUTIVE")
+      .trim()
+      .toUpperCase();
+
+    const result = await resendBriefing(
+      briefingId,
+      templateType === "PRACTICAL" ? "PRACTICAL" : "EXECUTIVE"
+    );
 
     if (!result.ok) {
-      return Response.json(result, { status: 400 });
+      return Response.json(
+        {
+          error: result.reason || "브리핑 재발송에 실패했습니다.",
+          ...result,
+        },
+        { status: 500 }
+      );
     }
 
     return Response.json(result);

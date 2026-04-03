@@ -953,7 +953,8 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
 }
 
 export async function resendBriefing(
-  briefingId: number
+  briefingId: number,
+  forcedTemplateType?: BriefingTemplateType
 ): Promise<ResendBriefingResult> {
   const { BRIEFING_TO_EMAIL } = getBriefingEnv();
 
@@ -1003,7 +1004,8 @@ export async function resendBriefing(
     .filter(Boolean);
 
   const templateType: BriefingTemplateType =
-    briefing.categoryTag?.includes("PRACTICAL") ? "PRACTICAL" : "EXECUTIVE";
+    forcedTemplateType ||
+    (briefing.categoryTag?.includes("PRACTICAL") ? "PRACTICAL" : "EXECUTIVE");
 
   const scheduledDateLabel = getKstDayKey(
     briefing.scheduledDate || briefing.createdAt
@@ -1027,6 +1029,9 @@ export async function resendBriefing(
       where: { id: briefing.id },
       data: {
         summary: overallSummary,
+        categoryTag: briefing.categoryTag?.includes("DAILY_AUTO")
+          ? `DAILY_AUTO_${templateType}`
+          : templateType,
         sentTo: BRIEFING_TO_EMAIL,
         sentAt: getKstNow(),
         status: "SENT",
