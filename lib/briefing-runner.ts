@@ -16,11 +16,6 @@ type CandidateNews = {
   createdAt: Date;
 };
 
-type SummaryItem = {
-  id: number;
-  summary: string;
-};
-
 type StructuredBriefing = {
   trend: string;
   keyPoints: string[];
@@ -50,13 +45,13 @@ type ResendBriefingResult = {
 function normalizeText(value: string) {
   return String(value || "")
     .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
 function tokenize(value: string) {
   return normalizeText(value)
-    .replace(/[|,/()\-_[\]:"'`~!?]+/g, " ")
     .split(" ")
     .map((x) => x.trim())
     .filter(Boolean);
@@ -69,14 +64,6 @@ function escapeHtml(value: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
-}
-
-function safeJsonParse<T>(text: string): T | null {
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    return null;
-  }
 }
 
 function isQuotaError(error: unknown): boolean {
@@ -133,14 +120,18 @@ function getRecentWindowStart(hours: number) {
   return new Date(Date.now() - hours * 60 * 60 * 1000);
 }
 
-function buildFallbackSummary(news: CandidateNews) {
-  const base = news.snippet?.trim() || news.title.trim();
-
-  if (base.length <= 120) {
-    return base;
-  }
-
-  return `${base.slice(0, 117)}...`;
+function buildFallbackStructuredBriefing(input: {
+  queries: string[];
+  newsList: CandidateNews[];
+}): StructuredBriefing {
+  return {
+    trend: `${input.queries.slice(0, 3).join(", ")} 중심으로 최근 기사 흐름을 보면, 주요 이슈가 반복적으로 수렴되며 기업 관점에서 추적할 포인트가 뚜렷해지고 있습니다.`,
+    keyPoints: input.newsList.slice(0, 5).map((item) => item.title),
+    companyInsight:
+      "기업 관점에서는 단순한 기사 수보다 실제 투자, 공급망, 실적, 정책 변화와 연결되는 핵심 기사를 중심으로 판단하는 것이 중요합니다.",
+    comment:
+      "유사 기사 반복이 많을수록 핵심 기사 선별과 중복 제거의 중요성이 커집니다.",
+  };
 }
 
 function collectQueryCandidates(rows: Array<{ query: string }>, limit: number) {
@@ -150,119 +141,138 @@ function collectQueryCandidates(rows: Array<{ query: string }>, limit: number) {
     const query = String(row.query || "").trim();
     if (!query) continue;
     if (deduped.includes(query)) continue;
-
     deduped.push(query);
 
-    if (deduped.length >= limit) {
-      break;
-    }
+    if (deduped.length >= limit) break;
   }
 
   return deduped;
 }
 
-function scoreNews(news: CandidateNews, queries: string[]) {
+function queryMatchScore(news: CandidateNews, queries: string[]) {
   const haystack = normalizeText(
     [news.title, news.snippet, news.sourceQuery].filter(Boolean).join(" ")
   );
 
   let score = 0;
-
   for (const query of queries) {
-    const normalizedQuery = normalizeText(query);
-    if (!normalizedQuery) continue;
-
-    if (haystack.includes(normalizedQuery)) {
-      score += 12;
-    }
-
     for (const token of tokenize(query)) {
       if (token.length <= 1) continue;
-      if (haystack.includes(token)) {
-        score += 2;
-      }
+      if (haystack.includes(token)) score += 2;
     }
   }
-
-  if (/투자|계약|확대|수주|진출|협력|제재|공급|실적|매출|생산/i.test(news.title)) {
-    score += 5;
-  }
-
-  if (/\d+%|\d+억|\d+조|\d+만|\d+배/.test(news.title)) {
-    score += 3;
-  }
-
-  const recentBoost = Math.max(
-    0,
-    5 - Math.floor((Date.now() - news.createdAt.getTime()) / (1000 * 60 * 60 * 6))
-  );
-
-  score += recentBoost;
 
   return score;
 }
 
-function isSimilarTitle(a: string, b: string) {
-  const aa = normalizeText(a).replace(/[^\p{L}\p{N}\s]/gu, "");
-  const bb = normalizeText(b).replace(/[^\p{L}\p{N}\s]/gu, "");
+function businessSignalScore(news: CandidateNews) {
+  const text = `${news.title} ${news.snippet || ""}`;
+  let score = 0;
+
+  if (/투자|수주|실적|매출|제휴|협력|계약|공급|확대|출시|양산|증설/i.test(text)) {
+    score += 5;
+  }
+
+  if (/\d+%|\d+억|\d+조|\d+만|\d+배/.test(text)) {
+    score += 3;
+  }
+
+  return score;
+}
+
+function freshnessScore(news: CandidateNews) {
+  const ageHours = Math.max(
+    0,
+    (Date.now() - news.createdAt.getTime()) / (1000 * 60 * 60)
+  );
+
+  if (ageHours <= 12) return 5;
+  if (ageHours <= 24) return 4;
+  if (ageHours <= 72) return 3;
+  if (ageHours <= 168) return 2;
+  return 1;
+}
+
+function jaccardSimilarity(a: string, b: string) {
+  const setA = new Set(tokenize(a));
+  const setB = new Set(tokenize(b));
+
+  if (!setA.size || !setB.size) return 0;
+
+  let intersection = 0;
+  for (const value of setA) {
+    if (setB.has(value)) intersection += 1;
+  }
+
+  const union = new Set([...setA, ...setB]).size;
+  return union === 0 ? 0 : intersection / union;
+}
+
+function isDuplicateTitle(a: string, b: string) {
+  const aa = normalizeText(a);
+  const bb = normalizeText(b);
 
   if (!aa || !bb) return false;
   if (aa === bb) return true;
   if (aa.includes(bb) || bb.includes(aa)) return true;
 
-  const tokensA = tokenize(aa);
-  const tokensB = tokenize(bb);
-
-  if (!tokensA.length || !tokensB.length) return false;
-
-  const overlap = tokensA.filter((token) => tokensB.includes(token)).length;
-  const minLength = Math.min(tokensA.length, tokensB.length);
-
-  return overlap >= Math.ceil(minLength * 0.6);
+  return jaccardSimilarity(aa, bb) >= 0.72;
 }
 
-function deduplicateNews(newsList: CandidateNews[]) {
-  const result: CandidateNews[] = [];
+function getDomain(link: string) {
+  try {
+    const url = new URL(link);
+    return url.hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
 
-  for (const news of newsList) {
-    const isDuplicate = result.some((existing) =>
-      isSimilarTitle(existing.title, news.title)
+function deduplicateAndRankNews(newsList: CandidateNews[], queries: string[]) {
+  const firstPass = newsList
+    .map((news) => ({
+      ...news,
+      sourceDomain: getDomain(news.link),
+      baseScore:
+        queryMatchScore(news, queries) +
+        businessSignalScore(news) +
+        freshnessScore(news),
+    }))
+    .sort((a, b) => b.baseScore - a.baseScore || b.id - a.id);
+
+  const uniqueNews: Array<
+    CandidateNews & {
+      sourceDomain: string;
+      baseScore: number;
+      diversityPenalty: number;
+      finalScore: number;
+    }
+  > = [];
+
+  const domainCount = new Map<string, number>();
+
+  for (const news of firstPass) {
+    const duplicated = uniqueNews.some((existing) =>
+      isDuplicateTitle(existing.title, news.title)
     );
 
-    if (!isDuplicate) {
-      result.push(news);
-    }
+    if (duplicated) continue;
+
+    const count = domainCount.get(news.sourceDomain) || 0;
+    const diversityPenalty = count >= 2 ? count * 1.4 : 0;
+    domainCount.set(news.sourceDomain, count + 1);
+
+    uniqueNews.push({
+      ...news,
+      diversityPenalty,
+      finalScore: news.baseScore - diversityPenalty,
+    });
   }
 
-  return result;
+  return uniqueNews.sort((a, b) => b.finalScore - a.finalScore);
 }
 
-function buildFallbackStructuredBriefing(input: {
-  queries: string[];
-  newsList: CandidateNews[];
-  summaryMap: Map<number, string>;
-}): StructuredBriefing {
-  const topNews = input.newsList.slice(0, 3);
-  const querySummary = input.queries.slice(0, 3).join(", ") || "주요 관심 키워드";
-  const keyPoints = topNews.map((item) => {
-    const summary = input.summaryMap.get(item.id) || buildFallbackSummary(item);
-    return summary;
-  });
-
-  return {
-    trend: `${querySummary} 중심으로 최근 기사 흐름을 보면 주요 기업 활동과 시장 변화가 함께 부각되고 있습니다.`,
-    keyPoints:
-      keyPoints.length > 0
-        ? keyPoints.slice(0, 3)
-        : ["주요 기사를 바탕으로 핵심 흐름을 정리했습니다."],
-    companyInsight:
-      "기업 관점에서는 투자, 생산, 공급망, 사업 확장과 관련된 변화가 실제 사업 운영과 전략에 영향을 줄 수 있습니다.",
-    comment:
-      "중복 이슈를 제외하고 실질적인 사업 변화나 수치가 포함된 뉴스를 우선적으로 추적하는 것이 좋습니다.",
-  };
-}
-
-function buildBriefingSubject(queryText: string, isResend = false) {
+function buildMailSubject(queryText: string, isResend = false) {
   const firstKeyword =
     queryText
       .split(",")
@@ -409,7 +419,7 @@ function buildMailHtml(input: {
         </tr>
 
         ${
-          otherItems.length > 0
+          otherItems.length
             ? `
         <tr><td style="height:8px;"></td></tr>
 
@@ -427,108 +437,86 @@ function buildMailHtml(input: {
   `;
 }
 
-async function summarizeNewsBatch(newsList: CandidateNews[]) {
+async function summarizePerNews(newsList: CandidateNews[]) {
   const { GEMINI_API_KEY } = getBriefingEnv();
 
   if (!GEMINI_API_KEY || newsList.length === 0) {
-    return new Map<number, string>();
+    return newsList.map((item) => ({
+      id: item.id,
+      summary: item.snippet || item.title,
+    }));
   }
 
-  const targets = newsList.filter((item) => !item.summary);
+  try {
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
-  if (targets.length === 0) {
-    return new Map<number, string>();
-  }
+    const prompt = `
+아래 기사별로 한 줄 요약을 만들어라.
+반드시 JSON만 반환한다.
 
-  const ai = new GoogleGenAI({
-    apiKey: GEMINI_API_KEY,
-  });
-
-  const prompt = `
-너는 뉴스 기사 요약기다.
-아래 기사 목록을 보고 각 기사마다 2문장 이내의 한국어 요약을 작성해라.
-출력은 반드시 JSON만 반환한다.
-
-조건:
-1. 과장하지 마라.
-2. 각 summary는 90자 이내로 작성한다.
-3. 기사마다 id를 그대로 유지한다.
-4. JSON 형식:
+형식:
 {
   "items": [
     { "id": 1, "summary": "..." }
   ]
 }
 
-[기사 목록]
-${targets
+조건:
+- 한국어
+- 기사당 1~2문장
+- 90자 이내
+- 과장 금지
+
+기사 목록:
+${newsList
   .map(
     (item) => `
-- id: ${item.id}
-  title: ${item.title}
-  snippet: ${item.snippet || ""}
-  sourceQuery: ${item.sourceQuery || ""}
+id: ${item.id}
+title: ${item.title}
+snippet: ${item.snippet || ""}
 `
   )
   .join("\n")}
 `;
 
-  try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
-        responseJsonSchema: {
-          type: "object",
-          properties: {
-            items: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  id: { type: "number" },
-                  summary: { type: "string" },
-                },
-                required: ["id", "summary"],
-              },
-            },
-          },
-          required: ["items"],
-        },
       },
     });
 
-    const parsed = safeJsonParse<{ items: SummaryItem[] }>(response.text || "");
+    const parsed = JSON.parse(response.text || "{}") as {
+      items?: { id: number; summary: string }[];
+    };
 
-    if (!parsed || !Array.isArray(parsed.items)) {
-      return new Map<number, string>();
+    if (!Array.isArray(parsed.items)) {
+      return newsList.map((item) => ({
+        id: item.id,
+        summary: item.snippet || item.title,
+      }));
     }
 
-    const summaryMap = new Map<number, string>();
-
-    for (const item of parsed.items) {
-      const summary = String(item.summary || "").trim();
-      if (!item.id || !summary) continue;
-      summaryMap.set(item.id, summary);
-    }
-
-    return summaryMap;
+    return parsed.items;
   } catch (error) {
     if (isQuotaError(error)) {
-      console.error("BRIEFING SUMMARY QUOTA FALLBACK:", error);
-      return new Map<number, string>();
+      console.error("NEWS SUMMARY QUOTA FALLBACK:", error);
+    } else {
+      console.error("NEWS SUMMARY ERROR:", error);
     }
 
-    console.error("BRIEFING SUMMARY ERROR:", error);
-    return new Map<number, string>();
+    return newsList.map((item) => ({
+      id: item.id,
+      summary: item.snippet || item.title,
+    }));
   }
 }
 
 async function generateStructuredBriefing(input: {
   queries: string[];
   newsList: CandidateNews[];
-  summaryMap: Map<number, string>;
+  summaries: { id: number; summary: string }[];
 }) {
   const { GEMINI_API_KEY } = getBriefingEnv();
 
@@ -536,111 +524,78 @@ async function generateStructuredBriefing(input: {
     return buildFallbackStructuredBriefing(input);
   }
 
-  const ai = new GoogleGenAI({
-    apiKey: GEMINI_API_KEY,
-  });
+  try {
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
-  const prompt = `
+    const prompt = `
 너는 기업용 뉴스 브리핑 분석가다.
-아래 기사들을 종합해서 하나의 구조화된 브리핑을 작성해라.
-개별 기사 요약을 단순 나열하지 말고, 전체 흐름을 분석해서 작성해라.
-출력은 반드시 JSON만 반환한다.
+아래 기사들을 종합해서 구조화된 브리핑을 작성해라.
+개별 기사 나열이 아니라 전체 흐름을 정리해라.
+반드시 JSON만 반환한다.
 
 형식:
 {
   "trend": "오늘의 핵심 동향",
-  "keyPoints": ["핵심 포인트1", "핵심 포인트2", "핵심 포인트3"],
+  "keyPoints": ["포인트1", "포인트2", "포인트3"],
   "companyInsight": "기업 관점 요약",
   "comment": "마지막 코멘트"
 }
 
 조건:
 1. trend는 2~3문장
-2. keyPoints는 3개
-3. companyInsight는 실무자 관점
-4. comment는 전략적 시사점
-5. 반복되는 기사들은 하나의 흐름으로 묶어라
-6. 과장 금지
-7. 한국어로 작성
+2. keyPoints는 3~5개
+3. 중복되는 이슈는 하나의 흐름으로 묶기
+4. 투자, 공급망, 실적, 정책, 협력, 생산 변화 우선
+5. 과장 금지
+6. 한국어
 
-[참고 검색어]
+검색어:
 ${input.queries.join(", ")}
 
-[기사 목록]
+기사 목록:
 ${input.newsList
   .map((item) => {
-    const summary = input.summaryMap.get(item.id) || buildFallbackSummary(item);
+    const summary =
+      input.summaries.find((row) => row.id === item.id)?.summary ||
+      item.snippet ||
+      item.title;
+
     return `
-- title: ${item.title}
-  summary: ${summary}
-  sourceQuery: ${item.sourceQuery || ""}
+제목: ${item.title}
+요약: ${summary}
 `;
   })
   .join("\n")}
 `;
 
-  try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
-        responseJsonSchema: {
-          type: "object",
-          properties: {
-            trend: { type: "string" },
-            keyPoints: {
-              type: "array",
-              items: { type: "string" },
-            },
-            companyInsight: { type: "string" },
-            comment: { type: "string" },
-          },
-          required: ["trend", "keyPoints", "companyInsight", "comment"],
-        },
       },
     });
 
-    const parsed = safeJsonParse<StructuredBriefing>(response.text || "");
+    const parsed = JSON.parse(response.text || "{}") as StructuredBriefing;
 
-    if (
-      !parsed ||
-      !parsed.trend ||
-      !Array.isArray(parsed.keyPoints) ||
-      !parsed.companyInsight ||
-      !parsed.comment
-    ) {
+    if (!parsed?.trend || !Array.isArray(parsed?.keyPoints)) {
       return buildFallbackStructuredBriefing(input);
     }
 
     return {
-      trend: String(parsed.trend || "").trim(),
-      keyPoints: parsed.keyPoints
-        .map((item) => String(item || "").trim())
-        .filter(Boolean)
-        .slice(0, 3),
-      companyInsight: String(parsed.companyInsight || "").trim(),
-      comment: String(parsed.comment || "").trim(),
+      trend: parsed.trend,
+      keyPoints: parsed.keyPoints.slice(0, 5),
+      companyInsight: parsed.companyInsight || "",
+      comment: parsed.comment || "",
     };
   } catch (error) {
     if (isQuotaError(error)) {
       console.error("STRUCTURED BRIEFING QUOTA FALLBACK:", error);
-      return buildFallbackStructuredBriefing(input);
+    } else {
+      console.error("STRUCTURED BRIEFING ERROR:", error);
     }
 
-    console.error("STRUCTURED BRIEFING ERROR:", error);
     return buildFallbackStructuredBriefing(input);
-  }
-}
-
-async function updateNewsSummaries(summaryMap: Map<number, string>) {
-  const entries = [...summaryMap.entries()];
-
-  for (const [id, summary] of entries) {
-    await prisma.news.update({
-      where: { id },
-      data: { summary },
-    });
   }
 }
 
@@ -649,43 +604,37 @@ async function buildBriefingMailPayload(input: {
   newsList: CandidateNews[];
   scheduledDateLabel: string;
 }) {
-  const pendingSummaryMap = await summarizeNewsBatch(input.newsList);
-
-  if (pendingSummaryMap.size > 0) {
-    await updateNewsSummaries(pendingSummaryMap);
-  }
-
-  const summaryMap = new Map<number, string>();
-
-  for (const item of input.newsList) {
-    summaryMap.set(
-      item.id,
-      pendingSummaryMap.get(item.id) || item.summary || buildFallbackSummary(item)
-    );
-  }
-
-  const structuredBriefing = await generateStructuredBriefing({
+  const summaries = await summarizePerNews(input.newsList);
+  const structured = await generateStructuredBriefing({
     queries: input.queries,
     newsList: input.newsList,
-    summaryMap,
+    summaries,
   });
+
+  const summaryMap = new Map(summaries.map((row) => [row.id, row.summary]));
 
   const html = buildMailHtml({
     scheduledDateLabel: input.scheduledDateLabel,
-    structured: structuredBriefing,
+    structured,
     items: input.newsList.map((item, index) => ({
       rank: index + 1,
       title: item.title,
       link: item.link,
-      summary: summaryMap.get(item.id) || buildFallbackSummary(item),
+      summary: summaryMap.get(item.id) || item.snippet || item.title,
       sourceQuery: item.sourceQuery,
       createdAt: item.createdAt,
     })),
   });
 
   return {
-    overallSummary: structuredBriefing.trend,
-    structuredBriefing,
+    overallSummary: [
+      `오늘의 핵심 동향: ${structured.trend}`,
+      `핵심 포인트:`,
+      ...structured.keyPoints.map((point) => `- ${point}`),
+      `기업 관점: ${structured.companyInsight}`,
+      `마지막 코멘트: ${structured.comment}`,
+    ].join("\n"),
+    structured,
     html,
   };
 }
@@ -774,7 +723,7 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
       },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: 150,
+    take: 180,
     select: {
       id: true,
       title: true,
@@ -786,24 +735,10 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
     },
   });
 
-  const scoredNews = recentNews
-    .map((item) => ({
-      ...item,
-      score: scoreNews(item, queryCandidates),
-    }))
-    .sort((a, b) => b.score - a.score || b.id - a.id);
+  const rankedUniqueNews = deduplicateAndRankNews(recentNews, queryCandidates);
+  const finalNews = rankedUniqueNews.slice(0, BRIEFING_MAX_NEWS);
 
-  const filteredNews = scoredNews
-    .filter((item) => item.score > 0)
-    .map(({ score, ...rest }) => rest);
-
-  const deduplicatedNews = deduplicateNews(filteredNews);
-  const finalNews =
-    deduplicatedNews.length > 0
-      ? deduplicatedNews.slice(0, BRIEFING_MAX_NEWS)
-      : deduplicateNews(recentNews).slice(0, BRIEFING_MAX_NEWS);
-
-  if (finalNews.length === 0) {
+  if (!finalNews.length) {
     const briefing = existing
       ? await prisma.briefing.update({
           where: { id: existing.id },
@@ -834,13 +769,12 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
     };
   }
 
+  const briefingQueryText = queryCandidates.join(", ");
   const { overallSummary, html } = await buildBriefingMailPayload({
     queries: queryCandidates,
     newsList: finalNews,
     scheduledDateLabel,
   });
-
-  const briefingQueryText = queryCandidates.join(", ");
 
   const briefing = existing
     ? await prisma.briefing.update({
@@ -883,7 +817,7 @@ export async function runDailyBriefing(): Promise<RunDailyBriefingResult> {
   try {
     await sendMail({
       to: BRIEFING_TO_EMAIL,
-      subject: buildBriefingSubject(briefingQueryText, false),
+      subject: buildMailSubject(briefingQueryText, false),
       html,
     });
 
@@ -986,7 +920,7 @@ export async function resendBriefing(briefingId: number): Promise<ResendBriefing
   try {
     await sendMail({
       to: BRIEFING_TO_EMAIL,
-      subject: buildBriefingSubject(briefing.query, true),
+      subject: buildMailSubject(briefing.query, true),
       html,
     });
 

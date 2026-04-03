@@ -1,304 +1,229 @@
 // app/api/send/route.ts - HTML 카드형 메일 발송 + Briefing sentTo / sentAT 업데이트 포함
 // 2026-03-27 : 카테고리 선택값 반영 
 
-import { sendMail } from "@/lib/gmail";
 import { prisma } from "@/lib/prisma";
+import { sendMail } from "@/lib/gmail";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type SearchItem = {
+  title: string;
+  link: string;
+  snippet: string;
+  pubDate: string;
+  sourceDomain?: string;
+};
+
+type StructuredSummary = {
+  trend: string;
+  keyPoints: string[];
+  companyInsight: string;
+  comment: string;
+};
 
 function escapeHtml(value: string) {
   return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
-function extractQueryTerms(query: string) {
-  return String(query || "")
-    .replace(/[|,/]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .split(" ")
-    .map((term) => term.trim())
-    .filter(Boolean);
-}
-
-function getStopWords() {
-  return new Set([
-    "and",
-    "or",
-    "the",
-    "a",
-    "an",
-    "of",
-    "for",
-    "to",
-    "in",
-    "on",
-    "with",
-    "by",
-    "is",
-    "are",
-    "was",
-    "were",
-    "be",
-    "as",
-    "at",
-    "from",
-    "news",
-    "briefing",
-    "브리핑",
-    "뉴스",
-    "관련",
-    "대한",
-    "에서",
-    "으로",
-    "그리고",
-    "또는",
-    "및",
-  ]);
-}
-
-function detectCategoryTag(query: string, selectedCategory?: string) {
-  if (selectedCategory && selectedCategory !== "전체") {
-    return selectedCategory;
-  }
-
-  const stopWords = getStopWords();
-
-  const terms = extractQueryTerms(query).filter((term) => {
-    const lower = term.toLowerCase();
-    return term && !stopWords.has(lower) && term.length > 1;
-  });
-
-  if (!terms.length) return "뉴스";
-
-  return Array.from(new Set(terms)).slice(0, 2).join(" · ");
-}
-
-function parseSummarySections(summary: string) {
-  const lines = String(summary || "")
-    .replace(/\r\n/g, "\n")
-    .split("\n")
-    .map((line) => line.trim());
-
-  let currentSection = "";
-  const sections: Record<string, string[]> = {
-    "오늘의 핵심 동향": [],
-    "기사별 핵심 포인트": [],
-    "기업 관점 요약": [],
-    "마지막 코멘트": [],
+function buildFallbackStructured(summary: string): StructuredSummary {
+  return {
+    trend: summary || "",
+    keyPoints: [],
+    companyInsight: "",
+    comment: "",
   };
-
-  const knownSections = Object.keys(sections);
-
-  for (const line of lines) {
-    if (!line) continue;
-
-    const matchedSection = knownSections.find((section) =>
-      line.includes(section)
-    );
-
-    if (matchedSection) {
-      currentSection = matchedSection;
-      continue;
-    }
-
-    if (currentSection) {
-      sections[currentSection].push(line);
-    }
-  }
-
-  return sections;
 }
 
-function renderBulletList(lines: string[]) {
-  if (!lines.length) return "";
+function buildMailSubject(query: string) {
+  const first = query
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean)[0] || "뉴스";
 
-  const items = lines.map((line) => {
-    const cleaned = line.startsWith("- ") ? line.slice(2) : line;
-    return `<li style="margin-bottom:8px;">${escapeHtml(cleaned)}</li>`;
-  });
+  return `[${first.length > 24 ? `${first.slice(0, 24)}...` : first}] 브리핑`;
+}
+
+function buildMailHtml(input: {
+  query: string;
+  structured: StructuredSummary;
+  items: SearchItem[];
+}) {
+  const topItems = input.items.slice(0, 3);
+  const otherItems = input.items.slice(3);
 
   return `
-    <ul style="margin:8px 0 0 20px;padding:0;color:#374151;line-height:1.8;">
-      ${items.join("")}
-    </ul>
+    <div style="background:#f3f4f6;padding:24px;font-family:Arial,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:760px;margin:0 auto;">
+        <tr>
+          <td style="background:#0f172a;border-radius:18px;padding:26px 24px 22px 24px;">
+            <div style="font-size:28px;font-weight:800;color:#ffffff;margin-bottom:8px;">브리핑</div>
+            <div style="font-size:13px;color:#cbd5e1;">${escapeHtml(input.query)}</div>
+          </td>
+        </tr>
+
+        <tr><td style="height:16px;"></td></tr>
+
+        <tr>
+          <td style="background:#e0f2fe;border:1px solid #7dd3fc;border-radius:16px;padding:18px 20px;">
+            <div style="font-size:16px;font-weight:800;color:#0f172a;margin-bottom:12px;">오늘의 핵심 동향</div>
+            <div style="font-size:15px;line-height:1.9;color:#1f2937;">
+              ${escapeHtml(input.structured.trend)}
+            </div>
+          </td>
+        </tr>
+
+        <tr><td style="height:14px;"></td></tr>
+
+        <tr>
+          <td style="background:#ffffff;border:1px solid #dbeafe;border-radius:16px;padding:18px 20px;">
+            <div style="font-size:16px;font-weight:800;color:#2563eb;margin-bottom:12px;">핵심 포인트</div>
+            <ul style="padding-left:20px;margin:0;">
+              ${input.structured.keyPoints
+                .map(
+                  (point) => `
+                    <li style="margin-bottom:10px;line-height:1.8;color:#1f2937;">
+                      ${escapeHtml(point)}
+                    </li>
+                  `
+                )
+                .join("")}
+            </ul>
+          </td>
+        </tr>
+
+        <tr><td style="height:14px;"></td></tr>
+
+        <tr>
+          <td>
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td width="50%" valign="top" style="padding-right:7px;">
+                  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:18px 20px;height:100%;">
+                    <div style="font-size:16px;font-weight:800;color:#0f172a;margin-bottom:12px;">기업 관점</div>
+                    <div style="font-size:14px;line-height:1.9;color:#334155;">
+                      ${escapeHtml(input.structured.companyInsight)}
+                    </div>
+                  </div>
+                </td>
+                <td width="50%" valign="top" style="padding-left:7px;">
+                  <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:16px;padding:18px 20px;height:100%;">
+                    <div style="font-size:16px;font-weight:800;color:#9a3412;margin-bottom:12px;">마지막 코멘트</div>
+                    <div style="font-size:14px;line-height:1.9;color:#7c2d12;">
+                      ${escapeHtml(input.structured.comment)}
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr><td style="height:20px;"></td></tr>
+
+        <tr>
+          <td>
+            <div style="font-size:20px;font-weight:800;color:#111827;margin-bottom:14px;">상위 3개 핵심 기사</div>
+            ${topItems
+              .map(
+                (item, index) => `
+                  <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:16px;padding:18px;margin-bottom:14px;">
+                    <div style="display:inline-block;background:#2563eb;color:#ffffff;font-size:12px;font-weight:700;border-radius:999px;padding:4px 10px;margin-bottom:10px;">
+                      TOP ${index + 1}
+                    </div>
+                    <div style="font-size:17px;font-weight:800;color:#111827;line-height:1.6;margin-bottom:8px;">
+                      <a href="${escapeHtml(item.link)}" target="_blank" style="color:#111827;text-decoration:none;">
+                        ${escapeHtml(item.title)}
+                      </a>
+                    </div>
+                    <div style="font-size:12px;color:#64748b;margin-bottom:8px;line-height:1.7;">
+                      ${escapeHtml(item.pubDate || "")}
+                    </div>
+                    <div style="font-size:14px;line-height:1.9;color:#334155;">
+                      ${escapeHtml(item.snippet || "")}
+                    </div>
+                  </div>
+                `
+              )
+              .join("")}
+          </td>
+        </tr>
+
+        ${
+          otherItems.length
+            ? `
+        <tr><td style="height:8px;"></td></tr>
+
+        <tr>
+          <td>
+            <div style="font-size:18px;font-weight:800;color:#475569;margin-bottom:12px;">그 외 기사</div>
+            ${otherItems
+              .map(
+                (item, index) => `
+                  <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:14px 16px;margin-bottom:10px;">
+                    <div style="font-size:13px;color:#64748b;font-weight:700;margin-bottom:6px;">기사 ${index + 4}</div>
+                    <div style="font-size:14px;font-weight:700;line-height:1.6;color:#111827;">
+                      <a href="${escapeHtml(item.link)}" target="_blank" style="color:#111827;text-decoration:none;">
+                        ${escapeHtml(item.title)}
+                      </a>
+                    </div>
+                  </div>
+                `
+              )
+              .join("")}
+          </td>
+        </tr>
+        `
+            : ""
+        }
+      </table>
+    </div>
   `;
 }
 
-function buildSummaryHtml(summary: string) {
-  const sections = parseSummarySections(summary);
-  const blocks: string[] = [];
-
-  if (sections["오늘의 핵심 동향"].length) {
-    blocks.push(`
-      <div style="background:#ecfeff;border:1px solid #a5f3fc;border-radius:16px;padding:20px;margin-bottom:20px;">
-        <div style="font-size:13px;color:#0f766e;font-weight:700;margin-bottom:10px;">
-          오늘의 핵심 동향
-        </div>
-        ${renderBulletList(sections["오늘의 핵심 동향"])}
-      </div>
-    `);
-  }
-
-  if (sections["기사별 핵심 포인트"].length) {
-    blocks.push(`
-      <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;padding:20px;margin-bottom:20px;">
-        <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:10px;">
-          기사별 핵심 포인트
-        </div>
-        ${renderBulletList(sections["기사별 핵심 포인트"])}
-      </div>
-    `);
-  }
-
-  if (sections["기업 관점 요약"].length) {
-    blocks.push(`
-      <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;padding:20px;margin-bottom:20px;">
-        <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:10px;">
-          기업 관점 요약
-        </div>
-        ${renderBulletList(sections["기업 관점 요약"])}
-      </div>
-    `);
-  }
-
-  if (sections["마지막 코멘트"].length) {
-    blocks.push(`
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:16px;padding:20px;margin-bottom:20px;">
-        <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:10px;">
-          마지막 코멘트
-        </div>
-        ${renderBulletList(sections["마지막 코멘트"])}
-      </div>
-    `);
-  }
-
-  return blocks.join("");
-}
-
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    const { to, summary, items, query, briefingId, category } = await req.json();
+    const body = await request.json();
 
-    if (!to || !to.trim()) {
-      return Response.json(
-        { error: "받는 사람 이메일이 비어 있습니다." },
-        { status: 400 }
-      );
+    const to = String(body?.to || "").trim();
+    const summary = String(body?.summary || "").trim();
+    const structured = (body?.structured || buildFallbackStructured(summary)) as StructuredSummary;
+    const items = Array.isArray(body?.items) ? (body.items as SearchItem[]) : [];
+    const query = String(body?.query || "").trim();
+    const briefingId = body?.briefingId ? Number(body.briefingId) : null;
+
+    if (!to) {
+      return Response.json({ error: "받는 이메일이 없습니다." }, { status: 400 });
     }
 
-    const safeQuery = escapeHtml(query || "");
-    const safeItems = Array.isArray(items) ? items : [];
-    const categoryTag = detectCategoryTag(query || "", category);
+    if (!query) {
+      return Response.json({ error: "query가 비어 있습니다." }, { status: 400 });
+    }
 
-    const rawSubjectQuery = (query || "뉴스").trim();
-    const subjectQuery =
-      rawSubjectQuery.length > 40
-        ? `${rawSubjectQuery.slice(0, 40)}...`
-        : rawSubjectQuery;
+    if (!items.length) {
+      return Response.json({ error: "보낼 기사 목록이 없습니다." }, { status: 400 });
+    }
 
-    const summaryHtml = buildSummaryHtml(summary || "");
-    const topItems = safeItems.slice(0, 3);
-
-    const topCards = topItems
-      .map((item: any, index: number) => {
-        const title = escapeHtml(item.title || "");
-        const link = String(item.link || "");
-        const snippet = escapeHtml(item.snippet || "");
-        const pubDate = escapeHtml(item.pubDate || "");
-
-        return `
-          <div style="border:1px solid #dbeafe;border-radius:14px;padding:18px;margin-bottom:14px;background:#ffffff;">
-            <div style="display:inline-block;background:#2563eb;color:#ffffff;font-size:12px;
-                        font-weight:700;padding:6px 10px;border-radius:999px;margin-bottom:10px;">
-              TOP ${index + 1}
-            </div>
-            <div style="font-size:18px;font-weight:700;line-height:1.5;margin-bottom:8px;">
-              <a href="${link}" style="color:#111827;text-decoration:none;" target="_blank" rel="noreferrer">
-                ${title}
-              </a>
-            </div>
-            <div style="font-size:12px;color:#6b7280;margin-bottom:10px;">
-              ${pubDate}
-            </div>
-            ${
-              snippet
-                ? `<div style="font-size:14px;line-height:1.7;color:#374151;">${snippet}</div>`
-                : ""
-            }
-          </div>
-        `;
-      })
-      .join("");
-
-    const articleCards = safeItems
-      .map((item: any, index: number) => {
-        const title = escapeHtml(item.title || "");
-        const link = String(item.link || "");
-        const snippet = escapeHtml(item.snippet || "");
-        const pubDate = escapeHtml(item.pubDate || "");
-
-        return `
-          <div style="border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:14px;background:#ffffff;">
-            <div style="font-size:13px;color:#6b7280;margin-bottom:8px;">기사 ${index + 1}</div>
-            <div style="font-size:17px;font-weight:700;line-height:1.5;margin-bottom:8px;">
-              <a href="${link}" style="color:#111827;text-decoration:none;" target="_blank" rel="noreferrer">
-                ${title}
-              </a>
-            </div>
-            <div style="font-size:12px;color:#6b7280;margin-bottom:10px;">${pubDate}</div>
-            ${
-              snippet
-                ? `<div style="font-size:14px;line-height:1.7;color:#374151;">${snippet}</div>`
-                : ""
-            }
-          </div>
-        `;
-      })
-      .join("");
-
-    const html = `
-      <div style="margin:0;padding:0;background:#f3f4f6;">
-        <div style="max-width:760px;margin:0 auto;padding:32px 20px;font-family:Arial,sans-serif;color:#111827;">
-          <div style="background:#111827;color:#ffffff;border-radius:16px;padding:24px 24px 20px 24px;margin-bottom:20px;">
-            <div style="display:inline-block;background:#374151;color:#ffffff;font-size:12px;
-                        font-weight:700;padding:6px 10px;border-radius:999px;margin-bottom:10px;">
-              ${escapeHtml(categoryTag)}
-            </div>
-            <h1 style="margin:0;font-size:28px;line-height:1.3;">${
-              safeQuery || "뉴스"
-            } 브리핑</h1>
-            <div style="margin-top:10px;font-size:14px;opacity:0.9;">
-              ${new Date().toLocaleString("ko-KR")}
-            </div>
-          </div>
-
-          ${summaryHtml}
-
-          <div style="margin-bottom:12px;font-size:20px;font-weight:700;">오늘의 핵심 기사 TOP 3</div>
-          ${topCards}
-
-          <div style="margin-top:28px;margin-bottom:12px;font-size:20px;font-weight:700;">전체 기사 목록</div>
-          ${articleCards}
-        </div>
-      </div>
-    `;
-
-    const subject = `[${categoryTag}] ${subjectQuery} 뉴스 브리핑 | ${new Date().toLocaleDateString(
-      "ko-KR"
-    )}`;
+    const html = buildMailHtml({
+      query,
+      structured,
+      items,
+    });
 
     await sendMail({
       to,
-      subject,
+      subject: buildMailSubject(query),
       html,
     });
 
-    if (briefingId) {
+    if (briefingId && Number.isFinite(briefingId)) {
       await prisma.briefing.update({
-        where: { id: Number(briefingId) },
+        where: { id: briefingId },
         data: {
           sentTo: to,
           sentAt: new Date(),
@@ -306,12 +231,16 @@ export async function POST(req: Request) {
       });
     }
 
-    return Response.json({ ok: true });
+    return Response.json({
+      ok: true,
+      sentTo: to,
+    });
   } catch (error: any) {
-    console.error("SEND MAIL ERROR:", error);
-
+    console.error("SEND ERROR:", error);
     return Response.json(
-      { error: error?.message || "메일 발송 중 오류가 발생했습니다." },
+      {
+        error: error?.message || "메일 발송 중 오류가 발생했습니다.",
+      },
       { status: 500 }
     );
   }
