@@ -2,8 +2,7 @@
 // (2026-03-27) : UI 업그레이드, AI 추천 기능 추가
 // (2026-03-30) : 검색 결과에 점수 정보 포함, 상위 20개 --> Gemini 재선별
 // (2026-04-02) : page 메뉴 구조 변경
-
-// app/page.tsx
+// (2026-04-03) : 대시보드 추가
 
 import Link from "next/link";
 
@@ -15,6 +14,13 @@ type MenuCard = {
 };
 
 const menuCards: MenuCard[] = [
+  {
+    title: "대시보드",
+    description:
+      "브리핑 발송 현황, 성공률, 템플릿 사용량, 상위 검색어 흐름을 한눈에 보는 운영 대시보드입니다.",
+    href: "/dashboard",
+    badge: "현황 화면",
+  },
   {
     title: "뉴스 브리핑",
     description:
@@ -95,7 +101,7 @@ export default function HomePage() {
               wordBreak: "keep-all",
             }}
           >
-            검색어 기반 기사 탐색, 중복 제거와 중요도 반영, Gemini 요약, 브리핑 메일 발송, 브리핑 이력 관리
+            대시보드, 검색어 기반 기사 탐색, 중복 제거와 중요도 반영, Gemini 요약, 브리핑 메일 발송, 브리핑 이력 관리
             <br />
             하나의 흐름으로 사용할 수 있는 화면입니다.
           </p>
@@ -104,7 +110,7 @@ export default function HomePage() {
         <section
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
             gap: 20,
           }}
         >
@@ -248,6 +254,18 @@ export default function HomePage() {
               gap: 10,
             }}
           >
+            <span
+              style={{
+                background: "#f1f5f9",
+                color: "#0f172a",
+                borderRadius: 999,
+                padding: "8px 12px",
+                fontSize: 13,
+                fontWeight: 700,
+              }}
+            >
+              /dashboard
+            </span>
             <span
               style={{
                 background: "#eff6ff",
