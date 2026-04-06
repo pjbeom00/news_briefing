@@ -1,4 +1,5 @@
 // app/api/dashboard/queries/route.ts
+// (2026-04-06) File: app/api/dashboard/queries/route.ts
 
 import { prisma } from "@/lib/prisma";
 
@@ -14,23 +15,94 @@ function extractBaseCategory(categoryTag?: string | null) {
   const raw = String(categoryTag || "").trim();
   if (!raw) return "기타";
 
-  if (raw.includes("_")) {
-    const parts = raw.split("_").filter(Boolean);
-    if (parts.length >= 1) {
-      const base = parts[0];
-      if (base === "DAILY") return "자동브리핑";
-      return base;
+  const parts = raw.split("_").filter(Boolean);
+  const filtered = parts.filter(
+    (part) =>
+      part !== "FAVORITE" &&
+      part !== "EXECUTIVE" &&
+      part !== "PRACTICAL" &&
+      part !== "AUTO"
+  );
+
+  if (filtered.length === 0) {
+    if (raw.includes("DAILY")) return "자동브리핑";
+    return "기타";
+  }
+
+  return filtered[0];
+}
+
+function getDateDaysAgo(days: number) {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+}
+
+function toDayKey(date: Date) {
+  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  const year = kst.getUTCFullYear();
+  const month = String(kst.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(kst.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeTitleForDup(title: string) {
+  return String(title || "")
+    .toLowerCase()
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\([^\)]*\)/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function calcDuplicateQualityScore(titles: string[]) {
+  const normalized = titles
+    .map(normalizeTitleForDup)
+    .filter(Boolean);
+
+  if (normalized.length === 0) {
+    return {
+      duplicateQualityScore: 100,
+      duplicateCount: 0,
+      totalArticleCount: 0,
+    };
+  }
+
+  const counts = new Map<string, number>();
+
+  for (const title of normalized) {
+    counts.set(title, (counts.get(title) || 0) + 1);
+  }
+
+  let duplicateCount = 0;
+
+  for (const count of counts.values()) {
+    if (count > 1) {
+      duplicateCount += count - 1;
     }
   }
 
-  return raw;
+  const totalArticleCount = normalized.length;
+  const duplicateRatio = totalArticleCount > 0 ? duplicateCount / totalArticleCount : 0;
+  const duplicateQualityScore = Math.max(
+    0,
+    Math.round((1 - duplicateRatio) * 100)
+  );
+
+  return {
+    duplicateQualityScore,
+    duplicateCount,
+    totalArticleCount,
+  };
 }
 
 export async function GET() {
   try {
+    const sevenDaysAgo = getDateDaysAgo(7);
+
     const [briefings, savedQueries] = await Promise.all([
       prisma.briefing.findMany({
         orderBy: { createdAt: "desc" },
+        take: 180,
         select: {
           id: true,
           query: true,
@@ -39,6 +111,22 @@ export async function GET() {
           createdAt: true,
           sentAt: true,
           sentTo: true,
+          items: {
+            orderBy: {
+              rankOrder: "asc",
+            },
+            select: {
+              id: true,
+              rankOrder: true,
+              news: {
+                select: {
+                  id: true,
+                  title: true,
+                  link: true,
+                },
+              },
+            },
+          },
         },
       }),
       prisma.savedQuery.findMany({
@@ -81,12 +169,18 @@ export async function GET() {
           practical: number;
         };
         categories: Map<string, number>;
+        duplicateQualityScores: number[];
+        duplicateCounts: number[];
+        articleCounts: number[];
         savedQueryId: number | null;
         savedQueryName: string | null;
         savedQueryCategory: string | null;
         savedQueryFavorite: boolean;
       }
     >();
+
+    const dailyCountMap = new Map<string, number>();
+    const dailySentMap = new Map<string, number>();
 
     for (const briefing of briefings) {
       const key = briefing.query.trim();
@@ -107,6 +201,9 @@ export async function GET() {
             practical: 0,
           },
           categories: new Map<string, number>(),
+          duplicateQualityScores: [],
+          duplicateCounts: [],
+          articleCounts: [],
           savedQueryId: savedQueryInfo?.id ?? null,
           savedQueryName: savedQueryInfo?.name ?? null,
           savedQueryCategory: savedQueryInfo?.category ?? null,
@@ -115,7 +212,6 @@ export async function GET() {
       }
 
       const row = performanceMap.get(key)!;
-
       row.totalBriefings += 1;
 
       const status = String(briefing.status || "").toUpperCase();
@@ -133,6 +229,22 @@ export async function GET() {
 
       const category = extractBaseCategory(briefing.categoryTag);
       row.categories.set(category, (row.categories.get(category) || 0) + 1);
+
+      const titles = briefing.items.map((item) => item.news?.title || "").filter(Boolean);
+      const dupStats = calcDuplicateQualityScore(titles);
+
+      row.duplicateQualityScores.push(dupStats.duplicateQualityScore);
+      row.duplicateCounts.push(dupStats.duplicateCount);
+      row.articleCounts.push(dupStats.totalArticleCount);
+
+      if (briefing.createdAt >= sevenDaysAgo) {
+        const dayKey = toDayKey(briefing.createdAt);
+        dailyCountMap.set(dayKey, (dailyCountMap.get(dayKey) || 0) + 1);
+
+        if (status === "SENT") {
+          dailySentMap.set(dayKey, (dailySentMap.get(dayKey) || 0) + 1);
+        }
+      }
     }
 
     const rows = [...performanceMap.values()]
@@ -143,6 +255,32 @@ export async function GET() {
         const successRate =
           item.totalBriefings > 0
             ? Math.round((item.sentCount / item.totalBriefings) * 100)
+            : 0;
+
+        const averageDuplicateQualityScore =
+          item.duplicateQualityScores.length > 0
+            ? Math.round(
+                item.duplicateQualityScores.reduce((sum, value) => sum + value, 0) /
+                  item.duplicateQualityScores.length
+              )
+            : 100;
+
+        const averageDuplicateCount =
+          item.duplicateCounts.length > 0
+            ? Math.round(
+                (item.duplicateCounts.reduce((sum, value) => sum + value, 0) /
+                  item.duplicateCounts.length) *
+                  10
+              ) / 10
+            : 0;
+
+        const averageArticleCount =
+          item.articleCounts.length > 0
+            ? Math.round(
+                (item.articleCounts.reduce((sum, value) => sum + value, 0) /
+                  item.articleCounts.length) *
+                  10
+              ) / 10
             : 0;
 
         return {
@@ -156,6 +294,9 @@ export async function GET() {
           templateExecutiveCount: item.templates.executive,
           templatePracticalCount: item.templates.practical,
           topCategory,
+          duplicateQualityScore: averageDuplicateQualityScore,
+          averageDuplicateCount,
+          averageArticleCount,
           savedQueryId: item.savedQueryId,
           savedQueryName: item.savedQueryName,
           savedQueryCategory: item.savedQueryCategory,
@@ -171,12 +312,71 @@ export async function GET() {
         );
       });
 
+    const topQueries = rows.slice(0, 7).map((item) => ({
+      label: item.savedQueryName || item.query,
+      value: item.totalBriefings,
+    }));
+
+    const successRateTop = [...rows]
+      .filter((item) => item.totalBriefings > 0)
+      .sort((a, b) => b.successRate - a.successRate || b.totalBriefings - a.totalBriefings)
+      .slice(0, 7)
+      .map((item) => ({
+        label: item.savedQueryName || item.query,
+        value: item.successRate,
+      }));
+
+    const duplicateQualityTop = [...rows]
+      .sort(
+        (a, b) =>
+          b.duplicateQualityScore - a.duplicateQualityScore ||
+          b.totalBriefings - a.totalBriefings
+      )
+      .slice(0, 7)
+      .map((item) => ({
+        label: item.savedQueryName || item.query,
+        value: item.duplicateQualityScore,
+      }));
+
+    const templateDistribution = [
+      {
+        label: "경영진용",
+        value: rows.reduce((sum, row) => sum + row.templateExecutiveCount, 0),
+      },
+      {
+        label: "실무형",
+        value: rows.reduce((sum, row) => sum + row.templatePracticalCount, 0),
+      },
+    ];
+
+    const dailyTrend = Array.from({ length: 7 }).map((_, index) => {
+      const date = getDateDaysAgo(6 - index);
+      const key = toDayKey(date);
+      const count = dailyCountMap.get(key) || 0;
+      const sent = dailySentMap.get(key) || 0;
+      const successRate = count > 0 ? Math.round((sent / count) * 100) : 0;
+
+      return {
+        day: key,
+        count,
+        sent,
+        successRate,
+      };
+    });
+
     return Response.json({
       data: rows,
       total: rows.length,
+      charts: {
+        topQueries,
+        successRateTop,
+        duplicateQualityTop,
+        templateDistribution,
+        dailyTrend,
+      },
     });
   } catch (error: any) {
-    console.error("DASHBOARD QUERY STATS ERROR:", error);
+    console.error("DASHBOARD_QUERY_STATS_ERROR:", error);
 
     return Response.json(
       {
