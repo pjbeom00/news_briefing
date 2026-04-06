@@ -5,12 +5,6 @@
 // (2026-04-03) : 추천 키워드 고정(pin), 기사 원문 미리보기 모달, 브리핑 템플릿 2종, 뉴스 화면에서 query 받도록 수정
 // (2026-04-06) File: app/news/page.tsx
 
-// app/page.tsx - 메인 페이지, 뉴스 30개 검색 후 최종 선정 기사 10개만 화면에 보이도록 정리
-// (2026-03-27) : UI 업그레이드, AI 추천 기능 추가
-// (2026-03-30) : 검색 결과에 점수 정보 포함, 상위 20개 --> Gemini 재선별
-// (2026-04-02) : app/page.tsx : 메뉴 재구성 및 반응형 3단 레이아웃 적용
-// (2026-04-03) : 추천 키워드 고정(pin), 기사 원문 미리보기 모달, 브리핑 템플릿 2종
-
 "use client";
 
 import { KeyboardEvent, useEffect, useMemo, useState } from "react";
@@ -121,6 +115,44 @@ async function parseJsonSafe(res: Response) {
 
 function normalizeText(value: string) {
   return String(value || "").toLowerCase().trim();
+}
+
+function cleanArticleSnippet(title: string, snippet?: string | null) {
+  const rawTitle = String(title || "").trim();
+  const rawSnippet = String(snippet || "").trim();
+
+  if (!rawSnippet) return "";
+
+  const normalizeForCompare = (value: string) =>
+    String(value || "")
+      .toLowerCase()
+      .replace(/\[[^\]]*\]/g, " ")
+      .replace(/\([^\)]*\)/g, " ")
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const titleNorm = normalizeForCompare(rawTitle);
+  const snippetNorm = normalizeForCompare(rawSnippet);
+
+  if (!titleNorm) return rawSnippet;
+
+  if (snippetNorm === titleNorm) {
+    return "";
+  }
+
+  if (snippetNorm.startsWith(titleNorm)) {
+    const escapedTitle = rawTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return rawSnippet.replace(new RegExp(`^${escapedTitle}\\s*[:：\\-–—]?\\s*`, "i"), "").trim();
+  }
+
+  if (snippetNorm.includes(titleNorm)) {
+    const escapedTitle = rawTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const cleaned = rawSnippet.replace(new RegExp(escapedTitle, "ig"), "").trim();
+    return cleaned;
+  }
+
+  return rawSnippet;
 }
 
 function extractQueryTerms(query: string) {
@@ -1767,45 +1799,13 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
             >
               <span>{item.pubDate}</span>
               {item.sourceDomain && <span>· {item.sourceDomain}</span>}
-              {typeof item.finalScore === "number" && (
-                <span>· 점수 {item.finalScore.toFixed(2)}</span>
-              )}
             </div>
 
-            {(typeof item.keywordScore === "number" ||
-              typeof item.tfidfScore === "number" ||
-              typeof item.freshnessScore === "number" ||
-              typeof item.importanceScore === "number") && (
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  flexWrap: "wrap",
-                  marginBottom: "10px",
-                  fontSize: "12px",
-                  color: "#475569",
-                }}
-              >
-                {typeof item.keywordScore === "number" && (
-                  <span>키워드 {item.keywordScore.toFixed(1)}</span>
-                )}
-                {typeof item.tfidfScore === "number" && (
-                  <span>TF-IDF {item.tfidfScore.toFixed(1)}</span>
-                )}
-                {typeof item.freshnessScore === "number" && (
-                  <span>최신성 {item.freshnessScore.toFixed(1)}</span>
-                )}
-                {typeof item.importanceScore === "number" && (
-                  <span>중요도 {item.importanceScore.toFixed(1)}</span>
-                )}
-                {typeof item.diversityPenalty === "number" &&
-                  item.diversityPenalty > 0 && (
-                    <span>다양성 패널티 -{item.diversityPenalty.toFixed(1)}</span>
-                  )}
-              </div>
+            {cleanArticleSnippet(item.title, item.snippet) && (
+              <p style={{ margin: 0, lineHeight: 1.7 }}>
+                {cleanArticleSnippet(item.title, item.snippet)}
+              </p>
             )}
-
-            {item.snippet && <p style={{ margin: 0, lineHeight: 1.7 }}>{item.snippet}</p>}
 
             <div
               style={{
@@ -2298,7 +2298,7 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
                 whiteSpace: "pre-wrap",
               }}
             >
-              {previewItem.snippet || "미리보기 가능한 요약 내용이 없습니다."}
+              {cleanArticleSnippet(previewItem.title, previewItem.snippet) || "미리보기 가능한 요약 내용이 없습니다."}
             </div>
 
             <div
