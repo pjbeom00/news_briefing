@@ -2,67 +2,103 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
-// prisma/schema.prisma
+// File: prisma/schema.prisma
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+provider = "prisma-client"
+output = "../generated/prisma"
 }
 
 datasource db {
-  provider = "postgresql"
+provider = "postgresql"
 }
 
 model News {
-  id            Int            @id @default(autoincrement())
-  title         String
-  link          String         @unique
-  snippet       String?
-  summary       String?
-  pubDate       String?
-  sourceQuery   String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  briefingItems BriefingItem[]
+id Int @id @default(autoincrement())
+title String
+link String @unique
+snippet String?
+summary String?
+pubDate String?
+sourceQuery String?
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+briefingItems BriefingItem[]
 }
 
 model Briefing {
-  id            Int            @id @default(autoincrement())
-  query         String
-  summary       String
-  categoryTag   String?
-  sentTo        String?
-  sentAt        DateTime?
-  scheduledDate DateTime?      @unique
-  status        String         @default("PENDING")
-  errorMessage  String?
-  createdAt     DateTime       @default(now())
-  items         BriefingItem[]
+id Int @id @default(autoincrement())
+query String
+summary String
+categoryTag String?
+sentTo String?
+sentAt DateTime?
+scheduledDate DateTime? @unique
+status String? @default("PENDING")
+errorMessage String?
+createdAt DateTime @default(now())
+items BriefingItem[]
+executionLogs BriefingExecutionLog[]
 
-  @@index([status])
+@@index([createdAt])
+@@index([status])
 }
 
 model BriefingItem {
-  id         Int      @id @default(autoincrement())
-  briefingId Int
-  newsId     Int
-  rankOrder  Int
-  createdAt  DateTime @default(now())
+id Int @id @default(autoincrement())
+briefingId Int
+newsId Int
+rankOrder Int
+createdAt DateTime @default(now())
 
-  briefing Briefing @relation(fields: [briefingId], references: [id], onDelete: Cascade)
-  news     News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
+briefing Briefing @relation(fields: [briefingId], references: [id], onDelete: Cascade)
+news News @relation(fields: [newsId], references: [id], onDelete: Cascade)
 
-  @@unique([briefingId, newsId])
-  @@index([briefingId])
-  @@index([newsId])
+@@unique([briefingId, newsId])
+@@index([briefingId])
+@@index([newsId])
 }
 
 model SavedQuery {
-  id         Int      @id @default(autoincrement())
-  name       String
-  query      String
-  category   String?
-  isFavorite Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+id Int @id @default(autoincrement())
+name String
+query String
+category String?
+isFavorite Boolean @default(false)
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+
+@@index([query])
+@@index([updatedAt])
 }
+
+model BriefingExecutionLog {
+id Int @id @default(autoincrement())
+query String
+toEmail String?
+templateType String
+deliveryMode String
+category String?
+status String @default("RUNNING")
+searchedCount Int @default(0)
+finalCount Int @default(0)
+briefingId Int?
+gmailMessageId String?
+gmailThreadId String?
+gmailDraftId String?
+adminDetailUrl String?
+adminListUrl String?
+gmailDraftsUrl String?
+errorMessage String?
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+
+briefing Briefing? @relation(fields: [briefingId], references: [id], onDelete: SetNull)
+
+@@index([createdAt])
+@@index([status])
+@@index([deliveryMode])
+@@index([query])
+@@index([briefingId])
+}
+
