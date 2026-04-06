@@ -1,4 +1,5 @@
 // app/api/dashboard/route.ts
+// (2026-04-03) : 대시보드 조회 추가
 
 import { prisma } from "@/lib/prisma";
 
@@ -27,6 +28,10 @@ function normalizeTemplateType(categoryTag?: string | null) {
   return "EXECUTIVE";
 }
 
+function isFavoriteBriefing(categoryTag?: string | null) {
+  return String(categoryTag || "").split("_").includes("FAVORITE");
+}
+
 export async function GET() {
   try {
     const now = new Date();
@@ -40,6 +45,7 @@ export async function GET() {
       recentSavedQueries,
       recentBriefings,
       allRecentBriefings,
+      favoriteBriefings,
     ] = await Promise.all([
       prisma.briefing.findMany({
         where: {
@@ -101,9 +107,11 @@ export async function GET() {
       }),
 
       prisma.briefing.findMany({
-        orderBy: {
-          createdAt: "desc",
-        },
+        orderBy: [
+          {
+            createdAt: "desc",
+          },
+        ],
         take: 10,
         select: {
           id: true,
@@ -136,6 +144,29 @@ export async function GET() {
           createdAt: "desc",
         },
       }),
+
+      prisma.briefing.findMany({
+        where: {
+          categoryTag: {
+            contains: "FAVORITE",
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 6,
+        select: {
+          id: true,
+          query: true,
+          summary: true,
+          categoryTag: true,
+          sentTo: true,
+          sentAt: true,
+          status: true,
+          errorMessage: true,
+          createdAt: true,
+        },
+      }),
     ]);
 
     const todaySentCount = todayBriefings.filter(
@@ -148,10 +179,6 @@ export async function GET() {
 
     const weekSentCount = weekBriefings.filter(
       (item) => String(item.status || "").toUpperCase() === "SENT"
-    ).length;
-
-    const weekFailedCount = weekBriefings.filter(
-      (item) => String(item.status || "").toUpperCase() === "FAILED"
     ).length;
 
     const weekSuccessRate =
@@ -213,14 +240,20 @@ export async function GET() {
         weekSuccessRate,
         recentSavedQueryCount: recentSavedQueries.length,
         totalRecentBriefingCount: allRecentBriefings.length,
+        favoriteBriefingCount: favoriteBriefings.length,
       },
       templateStats,
       topQueries,
       resendCandidates,
       recentSavedQueries,
-      recentBriefings,
-      todayBriefings,
-      weekBriefings,
+      recentBriefings: recentBriefings.map((item) => ({
+        ...item,
+        isFavorite: isFavoriteBriefing(item.categoryTag),
+      })),
+      favoriteBriefings: favoriteBriefings.map((item) => ({
+        ...item,
+        isFavorite: true,
+      })),
     });
   } catch (error: any) {
     console.error("DASHBOARD ERROR:", error);
@@ -233,3 +266,4 @@ export async function GET() {
     );
   }
 }
+

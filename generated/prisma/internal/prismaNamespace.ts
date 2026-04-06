@@ -387,7 +387,8 @@ export const ModelName = {
   News: 'News',
   Briefing: 'Briefing',
   BriefingItem: 'BriefingItem',
-  SavedQuery: 'SavedQuery'
+  SavedQuery: 'SavedQuery',
+  BriefingExecutionLog: 'BriefingExecutionLog'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -403,7 +404,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "news" | "briefing" | "briefingItem" | "savedQuery"
+    modelProps: "news" | "briefing" | "briefingItem" | "savedQuery" | "briefingExecutionLog"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -703,6 +704,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    BriefingExecutionLog: {
+      payload: Prisma.$BriefingExecutionLogPayload<ExtArgs>
+      fields: Prisma.BriefingExecutionLogFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.BriefingExecutionLogFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BriefingExecutionLogPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.BriefingExecutionLogFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BriefingExecutionLogPayload>
+        }
+        findFirst: {
+          args: Prisma.BriefingExecutionLogFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BriefingExecutionLogPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.BriefingExecutionLogFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BriefingExecutionLogPayload>
+        }
+        findMany: {
+          args: Prisma.BriefingExecutionLogFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BriefingExecutionLogPayload>[]
+        }
+        create: {
+          args: Prisma.BriefingExecutionLogCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BriefingExecutionLogPayload>
+        }
+        createMany: {
+          args: Prisma.BriefingExecutionLogCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.BriefingExecutionLogCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BriefingExecutionLogPayload>[]
+        }
+        delete: {
+          args: Prisma.BriefingExecutionLogDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BriefingExecutionLogPayload>
+        }
+        update: {
+          args: Prisma.BriefingExecutionLogUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BriefingExecutionLogPayload>
+        }
+        deleteMany: {
+          args: Prisma.BriefingExecutionLogDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.BriefingExecutionLogUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.BriefingExecutionLogUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BriefingExecutionLogPayload>[]
+        }
+        upsert: {
+          args: Prisma.BriefingExecutionLogUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$BriefingExecutionLogPayload>
+        }
+        aggregate: {
+          args: Prisma.BriefingExecutionLogAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateBriefingExecutionLog>
+        }
+        groupBy: {
+          args: Prisma.BriefingExecutionLogGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.BriefingExecutionLogGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.BriefingExecutionLogCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.BriefingExecutionLogCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -795,6 +870,31 @@ export const SavedQueryScalarFieldEnum = {
 } as const
 
 export type SavedQueryScalarFieldEnum = (typeof SavedQueryScalarFieldEnum)[keyof typeof SavedQueryScalarFieldEnum]
+
+
+export const BriefingExecutionLogScalarFieldEnum = {
+  id: 'id',
+  query: 'query',
+  toEmail: 'toEmail',
+  templateType: 'templateType',
+  deliveryMode: 'deliveryMode',
+  category: 'category',
+  status: 'status',
+  searchedCount: 'searchedCount',
+  finalCount: 'finalCount',
+  briefingId: 'briefingId',
+  gmailMessageId: 'gmailMessageId',
+  gmailThreadId: 'gmailThreadId',
+  gmailDraftId: 'gmailDraftId',
+  adminDetailUrl: 'adminDetailUrl',
+  adminListUrl: 'adminListUrl',
+  gmailDraftsUrl: 'gmailDraftsUrl',
+  errorMessage: 'errorMessage',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type BriefingExecutionLogScalarFieldEnum = (typeof BriefingExecutionLogScalarFieldEnum)[keyof typeof BriefingExecutionLogScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -988,6 +1088,7 @@ export type GlobalOmitConfig = {
   briefing?: Prisma.BriefingOmit
   briefingItem?: Prisma.BriefingItemOmit
   savedQuery?: Prisma.SavedQueryOmit
+  briefingExecutionLog?: Prisma.BriefingExecutionLogOmit
 }
 
 /* Types for Logging */

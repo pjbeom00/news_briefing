@@ -54,7 +54,8 @@ export const ModelName = {
   News: 'News',
   Briefing: 'Briefing',
   BriefingItem: 'BriefingItem',
-  SavedQuery: 'SavedQuery'
+  SavedQuery: 'SavedQuery',
+  BriefingExecutionLog: 'BriefingExecutionLog'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -126,6 +127,31 @@ export const SavedQueryScalarFieldEnum = {
 } as const
 
 export type SavedQueryScalarFieldEnum = (typeof SavedQueryScalarFieldEnum)[keyof typeof SavedQueryScalarFieldEnum]
+
+
+export const BriefingExecutionLogScalarFieldEnum = {
+  id: 'id',
+  query: 'query',
+  toEmail: 'toEmail',
+  templateType: 'templateType',
+  deliveryMode: 'deliveryMode',
+  category: 'category',
+  status: 'status',
+  searchedCount: 'searchedCount',
+  finalCount: 'finalCount',
+  briefingId: 'briefingId',
+  gmailMessageId: 'gmailMessageId',
+  gmailThreadId: 'gmailThreadId',
+  gmailDraftId: 'gmailDraftId',
+  adminDetailUrl: 'adminDetailUrl',
+  adminListUrl: 'adminListUrl',
+  gmailDraftsUrl: 'gmailDraftsUrl',
+  errorMessage: 'errorMessage',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type BriefingExecutionLogScalarFieldEnum = (typeof BriefingExecutionLogScalarFieldEnum)[keyof typeof BriefingExecutionLogScalarFieldEnum]
 
 
 export const SortOrder = {

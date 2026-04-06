@@ -37,3 +37,8 @@ export type BriefingItem = Prisma.BriefingItemModel
  * 
  */
 export type SavedQuery = Prisma.SavedQueryModel
+/**
+ * Model BriefingExecutionLog
+ * 
+ */
+export type BriefingExecutionLog = Prisma.BriefingExecutionLogModel
