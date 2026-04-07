@@ -1,5 +1,10 @@
 // app/api/dashboard/queries/route.ts
 // (2026-04-06) File: app/api/dashboard/queries/route.ts
+// (2026-04-07) 업그레이드 포인트:
+// 1) 중복 품질 점수 반영
+// 2) 최근 7일 성공률 차트
+// 3) 검색어별 평균 중복 수/기사 수 표시
+// 4) 기존 검색어 성과 페이지와 바로 연결되는 응답 구조
 
 import { prisma } from "@/lib/prisma";
 
@@ -17,19 +22,10 @@ function extractBaseCategory(categoryTag?: string | null) {
 
   const parts = raw.split("_").filter(Boolean);
   const filtered = parts.filter(
-    (part) =>
-      part !== "FAVORITE" &&
-      part !== "EXECUTIVE" &&
-      part !== "PRACTICAL" &&
-      part !== "AUTO"
+    (part) => part !== "FAVORITE" && part !== "EXECUTIVE" && part !== "PRACTICAL"
   );
 
-  if (filtered.length === 0) {
-    if (raw.includes("DAILY")) return "자동브리핑";
-    return "기타";
-  }
-
-  return filtered[0];
+  return filtered[0] || "기타";
 }
 
 function getDateDaysAgo(days: number) {
@@ -76,17 +72,12 @@ function calcDuplicateQualityScore(titles: string[]) {
   let duplicateCount = 0;
 
   for (const count of counts.values()) {
-    if (count > 1) {
-      duplicateCount += count - 1;
-    }
+    if (count > 1) duplicateCount += count - 1;
   }
 
   const totalArticleCount = normalized.length;
   const duplicateRatio = totalArticleCount > 0 ? duplicateCount / totalArticleCount : 0;
-  const duplicateQualityScore = Math.max(
-    0,
-    Math.round((1 - duplicateRatio) * 100)
-  );
+  const duplicateQualityScore = Math.max(0, Math.round((1 - duplicateRatio) * 100));
 
   return {
     duplicateQualityScore,

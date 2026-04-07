@@ -1,5 +1,9 @@
 // app/dashboard/queries/page.tsx
 // (2026-04-06) File: app/dashboard/queries/page.tsx
+// (2026-04-07) 업그레이드 포인트:
+// 1) 중복 품질 차트 추가
+// 2) 평균 중복 품질/평균 기사 수 카드 추가
+// 3) 기존 원클릭 실행/저장 이름/카테고리 수정 흐름 유지
 
 "use client";
 
@@ -428,8 +432,7 @@ export default function QueryPerformancePage() {
     const averageSuccessRate =
       totalQueries > 0
         ? Math.round(
-            filteredRows.reduce((sum, row) => sum + row.successRate, 0) /
-              totalQueries
+            filteredRows.reduce((sum, row) => sum + row.successRate, 0) / totalQueries
           )
         : 0;
     const averageDuplicateQuality =
@@ -680,9 +683,7 @@ export default function QueryPerformancePage() {
       const data = await parseJsonSafe(res);
 
       if (!res.ok) {
-        throw new Error(
-          (data as any).error || "원클릭 브리핑 실행 중 오류가 발생했습니다."
-        );
+        throw new Error((data as any).error || "원클릭 브리핑 실행 중 오류가 발생했습니다.");
       }
 
       setNotice(
