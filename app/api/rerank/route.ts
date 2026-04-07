@@ -4,6 +4,9 @@
 // 1) 최종 선정 전 한 번 더 중복 기사 억제
 // 2) 제목 + snippet 기준 스토리 병합
 // 3) 점수는 유지하되 유사 기사 몰림 방지
+// 중복 억제 + Gemini 재선별 + 부족한 결과 자동 보충
+
+import { GoogleGenAI } from "@google/genai";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -86,10 +89,6 @@ function isDuplicateStory(a: SearchItem, b: SearchItem) {
   if (normalizeCompact(a.link) === normalizeCompact(b.link)) return true;
   if (titleSim >= 0.9) return true;
   if (titleSim >= 0.78 && snippetSim >= 0.6) return true;
-  if (titleSim >= 0.72 && normalizeCompact(a.snippet || "").includes(normalizeCompact(b.snippet || ""))) {
-    return true;
-  }
-
   return false;
 }
 
@@ -150,6 +149,59 @@ function getDomain(link: string) {
   }
 }
 
+function localRerank(query: string, items: SearchItem[]) {
+  const rescored = items
+    .map((item) => {
+      const baseFinal = typeof item.finalScore === "number" ? item.finalScore : 0;
+      const queryScore = queryMatchScore(query, item);
+      const businessScore = businessSignalScore(item);
+      const freshScore = freshnessScore(item);
+
+      const boosted =
+        baseFinal * 0.7 + queryScore * 1.4 + businessScore * 1.1 + freshScore * 0.8;
+
+      return {
+        ...item,
+        finalScore: Math.round(boosted * 100) / 100,
+      };
+    })
+    .sort((a, b) => (b.finalScore || 0) - (a.finalScore || 0));
+
+  const unique: SearchItem[] = [];
+  const domainSeen = new Map<string, number>();
+
+  for (const item of rescored) {
+    const duplicated = unique.some((picked) => isDuplicateStory(item, picked));
+    if (duplicated) continue;
+
+    const domain = item.sourceDomain || getDomain(item.link);
+    const sameDomainCount = domainSeen.get(domain) || 0;
+
+    if (sameDomainCount >= 3) continue;
+
+    unique.push(item);
+    domainSeen.set(domain, sameDomainCount + 1);
+
+    if (unique.length >= 15) break;
+  }
+
+  return unique.length > 0 ? unique : rescored.slice(0, 15);
+}
+
+function fillRemainingWithUnique(base: SearchItem[], fallbackPool: SearchItem[], limit = 10) {
+  const result = [...base];
+
+  for (const item of fallbackPool) {
+    const duplicated = result.some((picked) => isDuplicateStory(item, picked));
+    if (duplicated) continue;
+
+    result.push(item);
+    if (result.length >= limit) break;
+  }
+
+  return result.slice(0, limit);
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -172,52 +224,78 @@ export async function POST(request: Request) {
       });
     }
 
-    const rescored = items
-      .map((item) => {
-        const baseFinal = typeof item.finalScore === "number" ? item.finalScore : 0;
-        const queryScore = queryMatchScore(query, item);
-        const businessScore = businessSignalScore(item);
-        const freshScore = freshnessScore(item);
+    const localRanked = localRerank(query, items);
+    const geminiKey = process.env.GEMINI_API_KEY;
 
-        const boosted =
-          baseFinal * 0.7 + queryScore * 1.4 + businessScore * 1.1 + freshScore * 0.8;
-
-        return {
-          ...item,
-          finalScore: Math.round(boosted * 100) / 100,
-        };
-      })
-      .sort((a, b) => (b.finalScore || 0) - (a.finalScore || 0));
-
-    const unique: SearchItem[] = [];
-    const domainSeen = new Map<string, number>();
-
-    for (const item of rescored) {
-      const duplicated = unique.some((picked) => isDuplicateStory(item, picked));
-      if (duplicated) continue;
-
-      const domain = item.sourceDomain || getDomain(item.link);
-      const sameDomainCount = domainSeen.get(domain) || 0;
-
-      if (sameDomainCount >= 3) continue;
-
-      unique.push(item);
-      domainSeen.set(domain, sameDomainCount + 1);
-
-      if (unique.length >= 10) break;
+    if (!geminiKey) {
+      return Response.json({ items: localRanked.slice(0, 10) });
     }
 
-    const finalItems =
-      unique.length > 0
-        ? unique
-        : rescored.slice(0, 10);
+    try {
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
 
-    return Response.json({
-      items: finalItems,
-    });
+      const prompt = `
+너는 뉴스 편집자다.
+아래 기사 후보들 중 중복 기사를 제거하고, 실무 관점에서 중요한 기사 10개를 우선순위로 골라라.
+반드시 기사 index만 JSON 배열로 반환해라.
+
+조건:
+1. 같은 사건을 다룬 중복 기사는 하나만 남긴다.
+2. 투자, 실적, 공급망, 협력, 정책, AI/반도체 산업 변화 기사 우선
+3. 숫자와 사업 영향이 명확한 기사 우선
+4. 최신 기사 우선
+5. 가능하면 8~10개를 고른다.
+6. JSON 형식:
+{ "indexes": [0,1,2,3,4,5,6,7] }
+
+검색어:
+${query}
+
+기사 후보:
+${localRanked
+  .map(
+    (item, index) => `
+[${index}]
+제목: ${item.title}
+요약: ${item.snippet}
+발행일: ${item.pubDate}
+도메인: ${item.sourceDomain || ""}
+점수: ${item.finalScore || 0}
+`
+  )
+  .join("\n")}
+`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+        },
+      });
+
+      const text = response.text || "";
+      const parsed = JSON.parse(text) as { indexes?: number[] };
+
+      if (!Array.isArray(parsed.indexes) || !parsed.indexes.length) {
+        return Response.json({ items: localRanked.slice(0, 10) });
+      }
+
+      const selected = parsed.indexes
+        .map((index) => localRanked[index])
+        .filter(Boolean);
+
+      const filled = fillRemainingWithUnique(selected, localRanked, 10);
+
+      return Response.json({
+        items: filled.length ? filled : localRanked.slice(0, 10),
+      });
+    } catch (error) {
+      console.error("RERANK GEMINI FALLBACK:", error);
+      return Response.json({ items: localRanked.slice(0, 10) });
+    }
   } catch (error: any) {
-    console.error("RERANK API ERROR:", error);
-
+    console.error("RERANK ERROR:", error);
     return Response.json(
       {
         error: error?.message || "재선별 중 오류가 발생했습니다.",

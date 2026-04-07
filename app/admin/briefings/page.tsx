@@ -4,6 +4,7 @@
 
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 type BriefingListItem = {
@@ -215,6 +216,80 @@ function SectionCard(props: {
   );
 }
 
+
+function TopNavigationBar(props: { onRefresh?: () => void }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: "10px",
+        flexWrap: "wrap",
+        marginBottom: "20px",
+      }}
+    >
+      <Link
+        href="/"
+        style={{
+          padding: "10px 14px",
+          borderRadius: "10px",
+          border: "1px solid #cbd5e1",
+          background: "#fff",
+          color: "#334155",
+          textDecoration: "none",
+          fontWeight: 700,
+        }}
+      >
+        메인 화면
+      </Link>
+
+      <Link
+        href="/news"
+        style={{
+          padding: "10px 14px",
+          borderRadius: "10px",
+          border: "1px solid #cbd5e1",
+          background: "#fff",
+          color: "#334155",
+          textDecoration: "none",
+          fontWeight: 700,
+        }}
+      >
+        뉴스 브리핑
+      </Link>
+
+      <Link
+        href="/admin/briefings"
+        style={{
+          padding: "10px 14px",
+          borderRadius: "10px",
+          border: "1px solid #2563eb",
+          background: "#eff6ff",
+          color: "#1d4ed8",
+          textDecoration: "none",
+          fontWeight: 700,
+        }}
+      >
+        브리핑 관리자
+      </Link>
+
+      <button
+        onClick={props.onRefresh}
+        style={{
+          padding: "10px 14px",
+          borderRadius: "10px",
+          border: "none",
+          background: "#2563eb",
+          color: "#fff",
+          fontWeight: 700,
+          cursor: "pointer",
+        }}
+      >
+        새로고침
+      </button>
+    </div>
+  );
+}
+
 export default function AdminBriefingsPage() {
   const [loadingList, setLoadingList] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -333,6 +408,14 @@ export default function AdminBriefingsPage() {
       }}
     >
       <div style={{ maxWidth: 1400, margin: "0 auto" }}>
+        <TopNavigationBar
+          onRefresh={() => {
+            loadList();
+            if (selectedId) {
+              loadDetail(selectedId);
+            }
+          }}
+        />
         <div
           style={{
             display: "flex",
