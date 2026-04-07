@@ -260,7 +260,7 @@ export default function DashboardPage() {
               fontWeight: 700,
             }}
           >
-            메인 허브
+            메인 화면
           </Link>
 
           <Link

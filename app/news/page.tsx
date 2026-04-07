@@ -3,10 +3,12 @@
 // (2026-03-30) : 검색 결과에 점수 정보 포함, 상위 20개 --> Gemini 재선별
 // (2026-04-02) : app/page.tsx : 메뉴 재구성 및 반응형 3단 레이아웃 적용
 // (2026-04-03) : 추천 키워드 고정(pin), 기사 원문 미리보기 모달, 브리핑 템플릿 2종, 뉴스 화면에서 query 받도록 수정
-// (2026-04-06) File: app/news/page.tsx
+// (2026-04-07) : 상단 이동 버튼, 미리보기 간략 요약 fallback, 최종 기사 10개 보강 적용
 
 "use client";
 
+import Link from "next/link";
+import type { ReactNode } from "react";
 import { KeyboardEvent, useEffect, useMemo, useState } from "react";
 
 type SearchItem = {
@@ -33,6 +35,20 @@ type SavedQuery = {
   updatedAt: string;
 };
 
+type RecommendationItem = {
+  keyword: string;
+  reason: string;
+};
+
+type StructuredSummary = {
+  trend: string;
+  keyPoints: string[];
+  companyInsight: string;
+  comment: string;
+};
+
+type BriefingTemplateType = "EXECUTIVE" | "PRACTICAL";
+
 type BriefingHistory = {
   id: number;
   query: string;
@@ -42,7 +58,7 @@ type BriefingHistory = {
   sentAt: string | null;
   createdAt: string;
   structured?: StructuredSummary | null;
-  items: {
+  items?: {
     id: number;
     rankOrder: number;
     news: {
@@ -58,20 +74,6 @@ type BriefingHistory = {
 };
 
 type BriefingDetail = BriefingHistory | null;
-
-type RecommendationItem = {
-  keyword: string;
-  reason: string;
-};
-
-type StructuredSummary = {
-  trend: string;
-  keyPoints: string[];
-  companyInsight: string;
-  comment: string;
-};
-
-type BriefingTemplateType = "EXECUTIVE" | "PRACTICAL";
 
 const CATEGORY_OPTIONS = [
   "전체",
@@ -137,22 +139,33 @@ function cleanArticleSnippet(title: string, snippet?: string | null) {
 
   if (!titleNorm) return rawSnippet;
 
-  if (snippetNorm === titleNorm) {
-    return "";
-  }
+  if (snippetNorm === titleNorm) return "";
 
   if (snippetNorm.startsWith(titleNorm)) {
     const escapedTitle = rawTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return rawSnippet.replace(new RegExp(`^${escapedTitle}\\s*[:：\\-–—]?\\s*`, "i"), "").trim();
+    return rawSnippet
+      .replace(new RegExp(`^${escapedTitle}\\s*[:：\\-–—]?\\s*`, "i"), "")
+      .trim();
   }
 
   if (snippetNorm.includes(titleNorm)) {
     const escapedTitle = rawTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const cleaned = rawSnippet.replace(new RegExp(escapedTitle, "ig"), "").trim();
-    return cleaned;
+    return rawSnippet.replace(new RegExp(escapedTitle, "ig"), "").trim();
   }
 
   return rawSnippet;
+}
+
+function buildPreviewSummary(item: SearchItem | null) {
+  if (!item) return "";
+
+  const cleaned = cleanArticleSnippet(item.title, item.snippet);
+  if (cleaned) return cleaned;
+
+  const title = String(item.title || "").trim();
+  if (!title) return "";
+
+  return `${title} 관련 주요 기사입니다. 상세 내용은 원문에서 확인 가능합니다.`;
 }
 
 function extractQueryTerms(query: string) {
@@ -359,12 +372,85 @@ function parseStructuredSummaryFromText(text: string): StructuredSummary {
   };
 }
 
+function TopNavigationBar(props: { onRefresh?: () => void }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: "10px",
+        flexWrap: "wrap",
+        marginBottom: "20px",
+      }}
+    >
+      <Link
+        href="/"
+        style={{
+          padding: "10px 14px",
+          borderRadius: "10px",
+          border: "1px solid #cbd5e1",
+          background: "#fff",
+          color: "#334155",
+          textDecoration: "none",
+          fontWeight: 700,
+        }}
+      >
+        메인 화면
+      </Link>
+
+      <Link
+        href="/news"
+        style={{
+          padding: "10px 14px",
+          borderRadius: "10px",
+          border: "1px solid #2563eb",
+          background: "#eff6ff",
+          color: "#1d4ed8",
+          textDecoration: "none",
+          fontWeight: 700,
+        }}
+      >
+        뉴스 브리핑
+      </Link>
+
+      <Link
+        href="/admin/briefings"
+        style={{
+          padding: "10px 14px",
+          borderRadius: "10px",
+          border: "1px solid #cbd5e1",
+          background: "#fff",
+          color: "#334155",
+          textDecoration: "none",
+          fontWeight: 700,
+        }}
+      >
+        브리핑 관리자
+      </Link>
+
+      <button
+        onClick={props.onRefresh}
+        style={{
+          padding: "10px 14px",
+          borderRadius: "10px",
+          border: "none",
+          background: "#2563eb",
+          color: "#fff",
+          fontWeight: 700,
+          cursor: "pointer",
+        }}
+      >
+        새로고침
+      </button>
+    </div>
+  );
+}
+
 function SummarySectionCard(props: {
   title: string;
   background: string;
   borderColor: string;
   titleColor: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div
@@ -450,6 +536,13 @@ export default function NewsPage() {
       .sort((a, b) => b._score - a._score)
       .slice(0, 20);
   }, [rawItems, query]);
+
+  const uniqueSelectedItems = useMemo(() => {
+    return selectedItems.filter(
+      (item, idx, arr) =>
+        arr.findIndex((candidate) => candidate.title === item.title) === idx
+    );
+  }, [selectedItems]);
 
   const filteredSavedQueries = useMemo(() => {
     if (selectedCategory === "전체") return savedQueries;
@@ -550,8 +643,8 @@ export default function NewsPage() {
         throw new Error((data as any).error || "저장 키워드 조회 실패");
       }
 
-      setSavedQueries(((data as any).data || []) as SavedQuery[]);
-    } catch (err: any) {
+      setSavedQueries((((data as any).data || []) as SavedQuery[]) || []);
+    } catch (err) {
       console.error(err);
     }
   };
@@ -566,8 +659,8 @@ export default function NewsPage() {
         throw new Error((data as any).error || "브리핑 히스토리 조회 실패");
       }
 
-      setBriefings(((data as any).data || []) as BriefingHistory[]);
-    } catch (err: any) {
+      setBriefings((((data as any).data || []) as BriefingHistory[]) || []);
+    } catch (err) {
       console.error(err);
     } finally {
       setHistoryLoading(false);
@@ -613,9 +706,9 @@ export default function NewsPage() {
         throw new Error((data as any).error || "추천 키워드 조회 실패");
       }
 
-      setRecommendations(((data as any).data || []) as RecommendationItem[]);
+      setRecommendations((((data as any).data || []) as RecommendationItem[]) || []);
       setRecommendationSource(((data as any).source || "") as "AI" | "RULE" | "");
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
       setRecommendations([]);
       setRecommendationSource("RULE");
@@ -698,9 +791,19 @@ export default function NewsPage() {
         setSelectedItems(preRanked.slice(0, 10));
         setNotice("Gemini 재선별에 실패하여 1차 후보 10개로 대체했습니다.");
       } else {
-        const finalItems = Array.isArray((rerankData as any).items)
-          ? ((rerankData as any).items as SearchItem[]).slice(0, 10)
+        let finalItems = Array.isArray((rerankData as any).items)
+          ? ((rerankData as any).items as SearchItem[])
           : [];
+
+        if (finalItems.length < 10) {
+          const fallback = preRanked.filter(
+            (item) => !finalItems.some((candidate) => candidate.link === item.link)
+          );
+          finalItems = [...finalItems, ...fallback].slice(0, 10);
+        } else {
+          finalItems = finalItems.slice(0, 10);
+        }
+
         setSelectedItems(finalItems);
       }
 
@@ -717,7 +820,7 @@ export default function NewsPage() {
   };
 
   const handleSummarize = async () => {
-    if (!selectedItems.length) return;
+    if (!uniqueSelectedItems.length) return;
 
     setSummarizing(true);
     setError("");
@@ -734,7 +837,7 @@ export default function NewsPage() {
         },
         body: JSON.stringify({
           query,
-          items: selectedItems,
+          items: uniqueSelectedItems,
           category: selectedCategory,
           templateType,
         }),
@@ -765,7 +868,7 @@ export default function NewsPage() {
   };
 
   const handleSendMail = async () => {
-    if (!email || !summary || !selectedItems.length) return;
+    if (!email || !summary || !uniqueSelectedItems.length) return;
 
     setSending(true);
     setError("");
@@ -781,7 +884,7 @@ export default function NewsPage() {
           to: email,
           summary,
           structured: structuredSummary,
-          items: selectedItems,
+          items: uniqueSelectedItems,
           query,
           briefingId,
           category: selectedCategory,
@@ -899,6 +1002,7 @@ export default function NewsPage() {
   const handleToggleFavorite = async (item: SavedQuery) => {
     try {
       setUpdatingSavedQueryId(item.id);
+
       const res = await fetch(`/api/saved-queries/${item.id}`, {
         method: "PATCH",
         headers: {
@@ -1510,7 +1614,7 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
 
           <button
             onClick={handleSummarize}
-            disabled={summarizing || !selectedItems.length}
+            disabled={summarizing || !uniqueSelectedItems.length}
             style={{
               padding: "12px 18px",
               borderRadius: "8px",
@@ -1565,7 +1669,7 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
 
           <button
             onClick={handleSendMail}
-            disabled={sending || !summary || !selectedItems.length || !email}
+            disabled={sending || !summary || !uniqueSelectedItems.length || !email}
             style={{
               padding: "12px 18px",
               borderRadius: "8px",
@@ -1644,7 +1748,7 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
           {" / "}
           알고리즘 상위 후보 수: <strong>{preRankedItems.length}</strong>개
           {" / "}
-          최종 선정 기사 수: <strong>{selectedItems.length}</strong>개
+          최종 선정 기사 수: <strong>{uniqueSelectedItems.length}</strong>개
           {reranking && (
             <span style={{ marginLeft: "10px", color: "#2563eb" }}>
               · Gemini 재선별 중...
@@ -1734,7 +1838,7 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
       <div style={{ marginTop: "24px" }}>
         <h2 style={{ marginBottom: "16px" }}>최종 선정 기사 10개</h2>
 
-        {selectedItems.length === 0 && (
+        {uniqueSelectedItems.length === 0 && (
           <div
             style={{
               padding: "16px",
@@ -1748,7 +1852,7 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
           </div>
         )}
 
-        {selectedItems.map((item, index) => (
+        {uniqueSelectedItems.map((item, index) => (
           <div
             key={`${item.link}-${index}`}
             style={{
@@ -1935,7 +2039,9 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
                   padding: 0,
                 }}
               >
-                <div style={{ fontWeight: 700, wordBreak: "break-word" }}>{item.query}</div>
+                <div style={{ fontWeight: 700, wordBreak: "break-word" }}>
+                  {item.query}
+                </div>
                 <div style={{ marginTop: "4px", fontSize: "12px", color: "#64748b" }}>
                   {item.categoryTag || "미분류"} ·{" "}
                   {new Date(item.createdAt).toLocaleString("ko-KR")}
@@ -2017,97 +2123,20 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
             {new Date(selectedBriefing.createdAt).toLocaleString("ko-KR")}
           </div>
 
-          {selectedBriefing.sentTo && (
-            <div style={{ marginTop: "6px", fontSize: "12px", color: "#166534" }}>
-              발송됨: {selectedBriefing.sentTo}
-            </div>
-          )}
-
-          {selectedBriefing.structured ? (
-            <div style={{ marginTop: "12px", display: "grid", gap: "10px" }}>
-              <SummarySectionCard
-                title="오늘의 핵심 동향"
-                background="#e0f2fe"
-                borderColor="#7dd3fc"
-                titleColor="#0f172a"
-              >
-                <div style={{ fontSize: "13px", lineHeight: 1.7 }}>
-                  {selectedBriefing.structured.trend}
-                </div>
-              </SummarySectionCard>
-
-              <SummarySectionCard
-                title="핵심 포인트"
-                background="#ffffff"
-                borderColor="#dbeafe"
-                titleColor="#2563eb"
-              >
-                <ul style={{ margin: 0, paddingLeft: "18px" }}>
-                  {selectedBriefing.structured.keyPoints.map((point, index) => (
-                    <li key={`${index}-${point}`} style={{ marginBottom: "6px", fontSize: "13px", lineHeight: 1.7 }}>
-                      {point}
-                    </li>
-                  ))}
-                </ul>
-              </SummarySectionCard>
-            </div>
-          ) : (
-            <pre
-              style={{
-                whiteSpace: "pre-wrap",
-                marginTop: "12px",
-                fontSize: "13px",
-                lineHeight: 1.6,
-                background: "#f8fafc",
-                padding: "10px",
-                borderRadius: "10px",
-              }}
-            >
-              {selectedBriefing.summary}
-            </pre>
-          )}
-
-          <div style={{ marginTop: "12px", fontWeight: 700 }}>기사 목록</div>
-
           <div
             style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-              marginTop: "8px",
+              marginTop: "12px",
+              padding: "12px",
+              borderRadius: "12px",
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              whiteSpace: "pre-wrap",
+              lineHeight: 1.7,
+              fontSize: "14px",
+              color: "#334155",
             }}
           >
-            {(selectedBriefing.items || []).map((item) => (
-              <a
-                key={item.id}
-                href={item.news.link}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  display: "block",
-                  padding: "10px",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "10px",
-                  textDecoration: "none",
-                  color: "#111827",
-                  background: "#fff",
-                }}
-              >
-                <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "4px" }}>
-                  {item.rankOrder}위
-                </div>
-                <div
-                  style={{
-                    fontSize: "14px",
-                    fontWeight: 700,
-                    lineHeight: 1.5,
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {item.news.title}
-                </div>
-              </a>
-            ))}
+            {selectedBriefing.summary}
           </div>
         </div>
       )}
@@ -2118,75 +2147,81 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
     <>
       <main
         style={{
-          maxWidth: "1400px",
+          maxWidth: "1600px",
           margin: "0 auto",
-          padding: isMobileLayout ? "18px 14px 32px" : "24px 20px 40px",
+          padding: "24px 20px 40px",
           fontFamily: "Arial, sans-serif",
         }}
       >
-        <h1 style={{ marginBottom: "8px", fontSize: isMobileLayout ? "28px" : "32px" }}>
-          뉴스 브리핑
-        </h1>
-        <p style={{ marginTop: 0, color: "#475569", lineHeight: 1.7 }}>
-          중복 제거 강화, 템플릿 분기, 히스토리 검색, 추천 키워드 고정, 기사 미리보기까지 반영된 버전입니다.
-        </p>
+        <TopNavigationBar
+          onRefresh={() => {
+            loadSavedQueries();
+            loadBriefings();
+            loadRecommendations();
+          }}
+        />
 
-        {isMobileLayout ? (
-          <>
-            <div
-              style={{
-                display: "flex",
-                gap: "8px",
-                marginBottom: "16px",
-              }}
-            >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: "16px",
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+            marginBottom: "18px",
+          }}
+        >
+          <div>
+            <h1 style={{ marginBottom: "8px" }}>뉴스 브리핑</h1>
+            <p style={{ marginTop: 0, color: "#475569", lineHeight: 1.7 }}>
+              검색어 기반 기사 탐색, 재선별, Gemini 요약, 메일 발송까지 한 화면에서 처리합니다.
+            </p>
+          </div>
+
+          {isMobileLayout && (
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
               <button
                 onClick={() => setActiveMobileTab("left")}
                 style={{
-                  flex: 1,
-                  padding: "10px 12px",
-                  borderRadius: "999px",
-                  border: activeMobileTab === "left" ? "none" : "1px solid #cbd5e1",
-                  background: activeMobileTab === "left" ? "#2563eb" : "#fff",
-                  color: activeMobileTab === "left" ? "#fff" : "#334155",
-                  fontWeight: 700,
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: activeMobileTab === "left" ? "1px solid #2563eb" : "1px solid #d1d5db",
+                  background: activeMobileTab === "left" ? "#eff6ff" : "#fff",
                   cursor: "pointer",
                 }}
               >
-                추천
+                추천/저장
               </button>
               <button
                 onClick={() => setActiveMobileTab("center")}
                 style={{
-                  flex: 1,
-                  padding: "10px 12px",
-                  borderRadius: "999px",
-                  border: activeMobileTab === "center" ? "none" : "1px solid #cbd5e1",
-                  background: activeMobileTab === "center" ? "#2563eb" : "#fff",
-                  color: activeMobileTab === "center" ? "#fff" : "#334155",
-                  fontWeight: 700,
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: activeMobileTab === "center" ? "1px solid #2563eb" : "1px solid #d1d5db",
+                  background: activeMobileTab === "center" ? "#eff6ff" : "#fff",
                   cursor: "pointer",
                 }}
               >
-                검색
+                기사/요약
               </button>
               <button
                 onClick={() => setActiveMobileTab("right")}
                 style={{
-                  flex: 1,
-                  padding: "10px 12px",
-                  borderRadius: "999px",
-                  border: activeMobileTab === "right" ? "none" : "1px solid #cbd5e1",
-                  background: activeMobileTab === "right" ? "#2563eb" : "#fff",
-                  color: activeMobileTab === "right" ? "#fff" : "#334155",
-                  fontWeight: 700,
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: activeMobileTab === "right" ? "1px solid #2563eb" : "1px solid #d1d5db",
+                  background: activeMobileTab === "right" ? "#eff6ff" : "#fff",
                   cursor: "pointer",
                 }}
               >
                 히스토리
               </button>
             </div>
+          )}
+        </div>
 
+        {isMobileLayout ? (
+          <>
             {activeMobileTab === "left" && leftPanel}
             {activeMobileTab === "center" && centerPanel}
             {activeMobileTab === "right" && rightPanel}
@@ -2195,14 +2230,14 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "280px minmax(0, 1fr) 360px",
+              gridTemplateColumns: "320px minmax(0, 1fr) 360px",
               gap: "20px",
               alignItems: "start",
             }}
           >
-            <div style={{ position: "sticky", top: "16px" }}>{leftPanel}</div>
+            {leftPanel}
             {centerPanel}
-            <div style={{ position: "sticky", top: "16px" }}>{rightPanel}</div>
+            {rightPanel}
           </div>
         )}
       </main>
@@ -2213,7 +2248,7 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(15,23,42,0.55)",
+            background: "rgba(15, 23, 42, 0.55)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -2230,8 +2265,6 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
               borderRadius: "18px",
               padding: "24px",
               boxShadow: "0 20px 50px rgba(0,0,0,0.18)",
-              maxHeight: "85vh",
-              overflow: "auto",
             }}
           >
             <div
@@ -2239,14 +2272,14 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
                 display: "flex",
                 justifyContent: "space-between",
                 gap: "12px",
-                marginBottom: "14px",
+                marginBottom: "18px",
                 alignItems: "flex-start",
               }}
             >
-              <div style={{ minWidth: 0 }}>
+              <div>
                 <div
                   style={{
-                    fontSize: "22px",
+                    fontSize: "20px",
                     fontWeight: 800,
                     color: "#0f172a",
                     lineHeight: 1.5,
@@ -2298,7 +2331,7 @@ Enter: 검색 / Shift+Enter: 줄바꿈`}
                 whiteSpace: "pre-wrap",
               }}
             >
-              {cleanArticleSnippet(previewItem.title, previewItem.snippet) || "미리보기 가능한 요약 내용이 없습니다."}
+              {buildPreviewSummary(previewItem) || "간략 요약을 생성하지 못했습니다."}
             </div>
 
             <div
