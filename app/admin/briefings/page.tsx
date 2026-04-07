@@ -1,10 +1,12 @@
 // app/admin/briefings/page.tsx
 // (2026-04-03) : 관리자 화면 UX 정리
 // (2026-04-06) File: app/admin/briefings/page.tsx
+// (2026-04-07) : 상단 이동 버튼 추가, 현재 구조 기준 전체 정리
 
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 type BriefingListItem = {
@@ -185,38 +187,6 @@ function parseStructuredSummary(text: string): SummarySections {
   return sections;
 }
 
-function SectionCard(props: {
-  title: string;
-  accentBg: string;
-  accentBorder: string;
-  titleColor: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      style={{
-        padding: 18,
-        borderRadius: 16,
-        background: props.accentBg,
-        border: `1px solid ${props.accentBorder}`,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 16,
-          fontWeight: 800,
-          color: props.titleColor,
-          marginBottom: 12,
-        }}
-      >
-        {props.title}
-      </div>
-      {props.children}
-    </div>
-  );
-}
-
-
 function TopNavigationBar(props: { onRefresh?: () => void }) {
   return (
     <div
@@ -286,6 +256,37 @@ function TopNavigationBar(props: { onRefresh?: () => void }) {
       >
         새로고침
       </button>
+    </div>
+  );
+}
+
+function SectionCard(props: {
+  title: string;
+  accentBg: string;
+  accentBorder: string;
+  titleColor: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        padding: 18,
+        borderRadius: 16,
+        background: props.accentBg,
+        border: `1px solid ${props.accentBorder}`,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 800,
+          color: props.titleColor,
+          marginBottom: 12,
+        }}
+      >
+        {props.title}
+      </div>
+      {props.children}
     </div>
   );
 }
@@ -363,7 +364,9 @@ export default function AdminBriefingsPage() {
       const json = await response.json();
 
       if (!response.ok) {
-        throw new Error(json?.error || json?.reason || "브리핑 재발송에 실패했습니다.");
+        throw new Error(
+          json?.error || json?.reason || "브리핑 재발송에 실패했습니다."
+        );
       }
 
       setMessage(`브리핑 ${selectedId} 재발송 완료`);
@@ -416,6 +419,7 @@ export default function AdminBriefingsPage() {
             }
           }}
         />
+
         <div
           style={{
             display: "flex",
@@ -442,7 +446,7 @@ export default function AdminBriefingsPage() {
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
               onClick={loadList}
               disabled={loadingList}
@@ -814,6 +818,7 @@ export default function AdminBriefingsPage() {
                                 fontSize: 14,
                                 lineHeight: 1.9,
                                 color: "#334155",
+                                wordBreak: "keep-all",
                               }}
                             >
                               {paragraph}
@@ -841,6 +846,7 @@ export default function AdminBriefingsPage() {
                                 fontSize: 14,
                                 lineHeight: 1.9,
                                 color: "#7c2d12",
+                                wordBreak: "keep-all",
                               }}
                             >
                               {paragraph}
@@ -854,91 +860,58 @@ export default function AdminBriefingsPage() {
                   </div>
                 </div>
 
-                {detail.errorMessage ? (
+                <div style={{ marginBottom: 16 }}>
                   <div
                     style={{
-                      marginBottom: 18,
-                      padding: 16,
-                      borderRadius: 14,
-                      background: "#fef2f2",
-                      border: "1px solid #fecaca",
-                      color: "#991b1b",
-                      fontSize: 14,
-                      lineHeight: 1.8,
+                      fontSize: 20,
+                      fontWeight: 800,
+                      color: "#0f172a",
+                      marginBottom: 14,
                     }}
                   >
-                    오류: {detail.errorMessage}
+                    강조 기사
                   </div>
-                ) : null}
 
-                <div
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                    marginBottom: 14,
-                  }}
-                >
-                  기사 목록
-                </div>
-
-                {highlightedItems.length > 0 ? (
-                  <div style={{ marginBottom: 24 }}>
-                    <div
-                      style={{
-                        fontSize: 15,
-                        fontWeight: 800,
-                        color: "#2563eb",
-                        marginBottom: 12,
-                      }}
-                    >
-                      상위 3개 핵심 기사
-                    </div>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                      {highlightedItems.map((item) => (
+                  {highlightedItems.length === 0 ? (
+                    <div style={{ color: "#64748b" }}>기사 정보가 없습니다.</div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 12 }}>
+                      {highlightedItems.map((item, index) => (
                         <div
                           key={item.id}
                           style={{
-                            border: "1px solid #bfdbfe",
-                            borderRadius: 16,
-                            padding: 18,
-                            background: "#eff6ff",
-                            boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                            padding: 16,
+                            borderRadius: 14,
+                            background: "#f8fbff",
+                            border: "1px solid #dbeafe",
                           }}
                         >
                           <div
                             style={{
                               display: "inline-block",
                               marginBottom: 10,
+                              padding: "4px 10px",
+                              borderRadius: 999,
+                              background: "#2563eb",
+                              color: "#fff",
                               fontSize: 12,
                               fontWeight: 800,
-                              color: "#fff",
-                              background: "#2563eb",
-                              borderRadius: 999,
-                              padding: "4px 10px",
                             }}
                           >
-                            TOP {item.rankOrder}
+                            TOP {index + 1}
                           </div>
 
                           <div
                             style={{
-                              fontSize: 17,
+                              fontSize: 16,
                               fontWeight: 800,
-                              color: "#111827",
-                              lineHeight: 1.6,
+                              color: "#0f172a",
+                              lineHeight: 1.7,
                               marginBottom: 8,
+                              wordBreak: "break-word",
                             }}
                           >
-                            <a
-                              href={item.news.link}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ color: "#111827", textDecoration: "none" }}
-                            >
-                              {item.news.title}
-                            </a>
+                            {item.news.title}
                           </div>
 
                           <div
@@ -949,78 +922,82 @@ export default function AdminBriefingsPage() {
                               marginBottom: 10,
                             }}
                           >
-                            작성일: {formatDate(item.news.createdAt)}
-                            <br />
-                            소스 키워드: {item.news.sourceQuery || "-"}
+                            {formatDate(item.news.pubDate || item.news.createdAt)} ·{" "}
+                            {item.news.sourceQuery || "-"}
                           </div>
 
                           <div
                             style={{
                               fontSize: 14,
                               color: "#334155",
-                              lineHeight: 1.9,
+                              lineHeight: 1.8,
+                              marginBottom: 10,
                             }}
                           >
-                            {item.news.summary || item.news.snippet || "-"}
+                            {item.news.summary || item.news.snippet || "요약 정보 없음"}
                           </div>
+
+                          <a
+                            href={item.news.link}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              padding: "8px 12px",
+                              borderRadius: 10,
+                              background: "#111827",
+                              color: "#fff",
+                              textDecoration: "none",
+                              fontSize: 13,
+                              fontWeight: 700,
+                            }}
+                          >
+                            원문 열기
+                          </a>
                         </div>
                       ))}
                     </div>
+                  )}
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 800,
+                      color: "#0f172a",
+                      marginBottom: 12,
+                    }}
+                  >
+                    나머지 기사
                   </div>
-                ) : null}
 
-                {normalItems.length > 0 ? (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: 15,
-                        fontWeight: 800,
-                        color: "#475569",
-                        marginBottom: 12,
-                      }}
-                    >
-                      그 외 기사
-                    </div>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {normalItems.length === 0 ? (
+                    <div style={{ color: "#64748b" }}>추가 기사 없음</div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 10 }}>
                       {normalItems.map((item) => (
                         <div
                           key={item.id}
                           style={{
-                            border: "1px solid #e2e8f0",
-                            borderRadius: 14,
                             padding: 14,
+                            borderRadius: 12,
+                            border: "1px solid #e2e8f0",
                             background: "#ffffff",
                           }}
                         >
                           <div
                             style={{
-                              fontSize: 13,
-                              fontWeight: 800,
-                              color: "#64748b",
-                              marginBottom: 8,
-                            }}
-                          >
-                            기사 {item.rankOrder}
-                          </div>
-
-                          <div
-                            style={{
-                              fontSize: 15,
+                              fontSize: 14,
                               fontWeight: 700,
                               color: "#111827",
-                              lineHeight: 1.6,
-                              marginBottom: 6,
+                              lineHeight: 1.7,
+                              marginBottom: 8,
+                              wordBreak: "break-word",
                             }}
                           >
-                            <a
-                              href={item.news.link}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ color: "#111827", textDecoration: "none" }}
-                            >
-                              {item.news.title}
-                            </a>
+                            {item.news.title}
                           </div>
 
                           <div
@@ -1028,15 +1005,47 @@ export default function AdminBriefingsPage() {
                               fontSize: 12,
                               color: "#64748b",
                               lineHeight: 1.7,
+                              marginBottom: 8,
                             }}
                           >
-                            소스 키워드: {item.news.sourceQuery || "-"}
+                            {formatDate(item.news.pubDate || item.news.createdAt)} ·{" "}
+                            {item.news.sourceQuery || "-"}
                           </div>
+
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: "#334155",
+                              lineHeight: 1.8,
+                              marginBottom: 8,
+                            }}
+                          >
+                            {item.news.summary || item.news.snippet || "요약 정보 없음"}
+                          </div>
+
+                          <a
+                            href={item.news.link}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              padding: "7px 11px",
+                              borderRadius: 9,
+                              background: "#0f172a",
+                              color: "#fff",
+                              textDecoration: "none",
+                              fontSize: 12,
+                              fontWeight: 700,
+                            }}
+                          >
+                            원문 열기
+                          </a>
                         </div>
                       ))}
                     </div>
-                  </div>
-                ) : null}
+                  )}
+                </div>
               </>
             ) : null}
           </section>
