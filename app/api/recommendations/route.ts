@@ -163,10 +163,34 @@ function isQuotaError(error: unknown): boolean {
   return false;
 }
 
+function isServerOverload(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    (error as any).status === 503
+  );
+}
+
+/** ----- 🔥 Retry Wrapper ----- */
+async function withRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries > 0 && (isQuotaError(error) || isServerOverload(error))) {
+      console.warn("AI Retry due to overload/quota:", error);
+      await new Promise((r) => setTimeout(r, 800));
+      return withRetry(fn, retries - 1);
+    }
+    throw error;
+  }
+}
+
 export async function GET() {
   const now = Date.now();
 
   try {
+    // Cache
     if (cachedResponse && now - cachedAt < CACHE_TTL_MS) {
       return Response.json(cachedResponse);
     }
@@ -175,32 +199,25 @@ export async function GET() {
       prisma.savedQuery.findMany({
         orderBy: [{ isFavorite: "desc" }, { updatedAt: "desc" }],
         take: 20,
-        select: {
-          query: true,
-          category: true,
-        },
+        select: { query: true, category: true },
       }),
       prisma.briefing.findMany({
         orderBy: { id: "desc" },
         take: 20,
-        select: {
-          query: true,
-          categoryTag: true,
-        },
+        select: { query: true, categoryTag: true },
       }),
       prisma.news.findMany({
         orderBy: { id: "desc" },
         take: 30,
-        select: {
-          title: true,
-        },
+        select: { title: true },
       }),
     ]);
 
+    // 기본 fallback (RULE)
     const fallbackData = buildRuleBasedRecommendations({
       savedQueries,
       briefings,
-      newsTitles: news.map((x: NewsRow) => x.title),
+      newsTitles: news.map((x) => x.title),
     });
 
     const fallbackResponse: RecommendationResponse = {
@@ -208,6 +225,7 @@ export async function GET() {
       data: fallbackData,
     };
 
+    // No AI?
     if (!ai) {
       cachedResponse = fallbackResponse;
       cachedAt = now;
@@ -226,18 +244,19 @@ export async function GET() {
 5. JSON만 반환한다.
 
 [최근 저장 키워드]
-${savedQueries.map((x: SavedQueryRow) => `- ${x.query} (${x.category || "미분류"})`).join("\n")}
+${savedQueries.map((x) => `- ${x.query} (${x.category || "미분류"})`).join("\n")}
 
 [최근 브리핑]
-${briefings.map((x: BriefingRow) => `- ${x.query} (${x.categoryTag || "미분류"})`).join("\n")}
+${briefings.map((x) => `- ${x.query} (${x.categoryTag || "미분류"})`).join("\n")}
 
 [최근 기사 제목]
-${news.map((x: NewsRow) => `- ${x.title}`).join("\n")}
+${news.map((x) => `- ${x.title}`).join("\n")}
 `;
 
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+    /** ----- 🔥 AI 호출 + Retry + Fallback ----- */
+    const aiResult = await withRetry(async () => {
+      return ai.models.generateContent({
+        model: "gemini-1.5-flash", // 안정성 높음
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -260,50 +279,41 @@ ${news.map((x: NewsRow) => `- ${x.title}`).join("\n")}
           },
         },
       });
+    });
 
-      const text = response.text || "";
-      const parsed = safeJsonParse<{ data: RecommendationItem[] }>(text);
+    const parsedText = aiResult.text || "";
+    const parsed = safeJsonParse<{ data: RecommendationItem[] }>(parsedText);
 
-      if (!parsed || !Array.isArray(parsed.data) || !parsed.data.length) {
-        cachedResponse = fallbackResponse;
-        cachedAt = now;
-        return Response.json(fallbackResponse);
-      }
-
-      const cleaned = parsed.data
-        .map((item) => ({
-          keyword: String(item.keyword || "").trim(),
-          reason: String(item.reason || "").trim(),
-        }))
-        .filter((item) => item.keyword)
-        .slice(0, 5);
-
-      if (!cleaned.length) {
-        cachedResponse = fallbackResponse;
-        cachedAt = now;
-        return Response.json(fallbackResponse);
-      }
-
-      const aiResponse: RecommendationResponse = {
-        source: "AI",
-        data: cleaned,
-      };
-
-      cachedResponse = aiResponse;
+    if (!parsed || !Array.isArray(parsed.data) || parsed.data.length === 0) {
+      cachedResponse = fallbackResponse;
       cachedAt = now;
-
-      return Response.json(aiResponse);
-    } catch (error: unknown) {
-      if (isQuotaError(error)) {
-        console.error("RECOMMENDATIONS QUOTA FALLBACK:", error);
-        cachedResponse = fallbackResponse;
-        cachedAt = now;
-        return Response.json(fallbackResponse);
-      }
-
-      throw error;
+      return Response.json(fallbackResponse);
     }
-  } catch (error: any) {
+
+    const cleaned = parsed.data
+      .map((item) => ({
+        keyword: String(item.keyword || "").trim(),
+        reason: String(item.reason || "").trim(),
+      }))
+      .filter((x) => x.keyword)
+      .slice(0, 5);
+
+    if (!cleaned.length) {
+      cachedResponse = fallbackResponse;
+      cachedAt = now;
+      return Response.json(fallbackResponse);
+    }
+
+    const aiResponse: RecommendationResponse = {
+      source: "AI",
+      data: cleaned,
+    };
+
+    cachedResponse = aiResponse;
+    cachedAt = now;
+
+    return Response.json(aiResponse);
+  } catch (error) {
     console.error("RECOMMENDATIONS ERROR:", error);
 
     const safeResponse: RecommendationResponse = {
